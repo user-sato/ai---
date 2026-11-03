@@ -1,0 +1,38 @@
+name: Verify MVP
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: secretary
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: secretary_test
+        ports: ["5432:5432"]
+        options: --health-cmd="pg_isready -U secretary" --health-interval=5s --health-timeout=3s --health-retries=10
+    env:
+      DATABASE_URL: postgresql://secretary:ci-test-only@127.0.0.1:5432/secretary_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run db:migrate
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+        env:
+          RUN_DB_TESTS: "1"
+      - run: npm run dry-run
+        env:
+          DRY_RUN: "true"
+          INTERNAL_AUTH_MODE: local
+          INTERNAL_LOCAL_TOKEN: synthetic-ci-token-at-least-32-characters
