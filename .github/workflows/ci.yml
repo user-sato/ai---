@@ -28,6 +28,8 @@ jobs:
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm run build
+      - run: node --check --input-type=commonjs < gas/Code.gs
+      - run: npx prettier --check --parser babel gas/Code.gs
       - run: npm test
         env:
           RUN_DB_TESTS: "1"

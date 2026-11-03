@@ -1,0 +1,35 @@
+# 受入テスト
+
+GAS固有のサービスはローカル実行環境から接続できないため、`Code.gs`の構文検査に加え、以下を専用LINEグループ・専用スプレッドシート・専用Driveフォルダで確認する。実グループで試す前に、参加者へ説明して合意を得る。
+
+## 事前確認
+
+- Script Propertiesに設定値がそろっている。`WEBHOOK_TOKEN`は32文字以上で、`LINE_GROUP_ID`は試験グループだけを指す。
+- `setupProject`実行後、`Messages`、`Items`、`Reports`、`Tasks`、`Issues`、`Decisions`シートがある。
+- `installTriggers`後に5分解析・日曜週次のトリガーが各1本だけある。
+
+## 受信と重複
+
+1. 試験グループで通常発言を1件送る。`Messages`に1行、`NEW`として記録される。
+2. LINE DevelopersのWebhook再送または同じイベントの再送で、同じMessage IDの行が増えない。
+3. 別グループで発言し、どのシートも変化しない。
+4. Webhook URLの`webhook_token`を変えたリクエストでは、どのシートも変化しない。
+5. 短時間に複数の発言を送っても、Message IDの重複がない。Apps Scriptの実行履歴に`LOCK_UNAVAILABLE`が続く場合は負荷・クォータを見直す。
+
+## AI候補と承認
+
+1. 「参加費1500円にしようかな」と送る。次の5分処理後に決定候補が`PENDING`で、根拠のMessage IDと引用を持つ。
+2. 担当者が明示されないタスクで、担当者を推測していないことを確認する。
+3. 非管理者から`/bot 承認 <ID>`を送る。候補が変化しない。
+4. 管理者から同じコマンドを送る。決定だけが`CONFIRMED`になる。`/bot 決定事項`は確定済みだけを返す。
+
+## レポートと失敗回復
+
+1. `createWeeklyReport`をApps Scriptエディタから手動実行する。週次Docsが年/月/週次レポートフォルダに作られ、成功後にLINE通知が1通だけ送られる。
+2. 同じ週にもう一度実行し、Docsと通知が増えない。
+3. 一時的にOpenAIキーを無効にして`processPendingMessages`を実行する。対象が`NEW`へ戻り、キー復旧後の次回処理で候補化される。Drive更新だけを失敗させた場合は、候補を再解析せず次の5分処理で現況Docsが更新される。
+4. LINEトークンを一時的に無効にして週次を実行する。`Reports`が`READY_TO_SEND`または`FAILED`になり、復旧後に`retryPendingWeeklyNotifications`で同じretry keyを使って再送できる。
+
+## 制約の確認
+
+GASはLINE署名を検証できない。グループIDだけでは偽装防止にならないため、token漏えい試験の代わりに、URLを共有しない運用と、漏えい時のtokenローテーション手順を確認する。署名検証が必要な段階では、この構成をそのまま本番公開しない。
