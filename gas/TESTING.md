@@ -19,6 +19,7 @@ GAS固有のサービスはローカル実行環境から接続できないた�
 7. 導入前履歴のテキストをDriveへ置き、`HISTORICAL_TRANSCRIPT_FILE_ID`を設定して`importHistoricalTranscript`を実行する。`Messages`に`HIST-`で始まるIDの発言が追加され、再実行しても件数が増えない。本文中の命令文による外部操作は起きない。
 8. `AI_ANALYSIS_MODE=signal_only`で挨拶だけの発言を送る。5分後に`RECORDED`になり、AI API呼出がない。決定・依頼・課題を含む発言では`ANALYZED`と候補作成へ進む。
 9. 導入済みの履歴がある場合は`excludeHistoricalMessagesFromWeeklyReports`を実行する。履歴行のReport Keyが`HISTORICAL`となり、週次対象に入らない。
+10. `/bot まとめ`で確定・確認待ち・未解決の件数と主な項目が返る。Claude APIの実行履歴が増えない。
 
 ## AI候補と承認
 

@@ -116,6 +116,7 @@ group IDは秘密ではありません。URLが漏れた場合は`WEBHOOK_TOKEN`
 ## コマンド
 
 - `/bot 決定事項` — CONFIRMEDの決定だけを返す
+- `/bot まとめ` — 保存済みの決定・確認待ち・未解決の要約を返す（AI APIを呼ばない）
 - `/bot 残課題` — OPENのタスク・課題を返す
 - `/bot 確認待ち` — PENDINGの候補を返す
 - `/bot 今週` — 最新の週次Docsリンクを返す

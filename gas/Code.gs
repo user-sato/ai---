@@ -500,7 +500,7 @@ function handleCommand_(event, config) {
   const parts = String(event.message.text).trim().split(/\s+/);
   const command = parts[1] || '';
   const itemId = parts[2] || '';
-  let reply = 'コマンド: /bot 状態・決定事項・残課題・確認待ち・今週・承認 <ID>・却下 <ID>';
+  let reply = 'コマンド: /bot 状態・まとめ・決定事項・残課題・確認待ち・今週・承認 <ID>・却下 <ID>';
 
   if (['承認', '却下'].includes(command)) {
     if (!config.adminUserIds.includes(String(event.source.userId || ''))) {
@@ -560,6 +560,30 @@ function handleCommand_(event, config) {
         dataRows_(sheet_(SHEETS.MESSAGES)).length +
         '件'
       );
+    });
+  } else if (command === 'まとめ') {
+    reply = withLock_(function () {
+      const items = dataRows_(sheet_(SHEETS.ITEMS)).map((row) => row.values);
+      const decisions = items.filter((item) => item[1] === 'DECISION' && item[4] === 'CONFIRMED');
+      const pending = items.filter((item) => item[4] === 'PENDING');
+      const open = items.filter(
+        (item) => ['TASK', 'ISSUE'].includes(item[1]) && item[4] === 'OPEN',
+      );
+      const lines = [
+        '【現在のまとめ】',
+        '確定した決定: ' + decisions.length + '件',
+        '確認待ち: ' + pending.length + '件',
+        '未解決: ' + open.length + '件',
+      ];
+      const highlights = decisions.concat(open, pending).slice(0, 5);
+      if (highlights.length) {
+        lines.push('', '主な項目:');
+        highlights.forEach((item) => lines.push('・[' + item[4] + '] ' + item[2]));
+      }
+      const documentId = PropertiesService.getScriptProperties().getProperty('CURRENT_DOC_ID');
+      if (documentId)
+        lines.push('', '現況書: https://docs.google.com/document/d/' + documentId + '/edit');
+      return lines.join('\n');
     });
   } else if (command === '今週') {
     reply = withLock_(function () {
