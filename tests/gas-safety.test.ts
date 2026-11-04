@@ -51,7 +51,9 @@ function gasFunctions(): any {
       ' globalThis.__isSummarySourceRow = isSummarySourceRow_;' +
       ' globalThis.__isWeeklySourceRow = isWeeklySourceRow_;' +
       ' globalThis.__approvedStatusForKind = approvedStatusForKind_;' +
-      ' globalThis.__validateExecutiveResult = validateExecutiveResult_;',
+      ' globalThis.__validateExecutiveResult = validateExecutiveResult_;' +
+      ' globalThis.__anthropicStructuredRequest = anthropicStructuredRequest_;' +
+      ' globalThis.__parseAnthropicJson = parseAnthropicJson_;',
     context,
   );
   return context;
@@ -485,5 +487,53 @@ describe('GAS sheet value safety', () => {
     expect(runMissingWeeklyRecovery()).toEqual(['weekly:2026-11-01']);
     expect(runMissingWeeklyRecovery('2026-11-02T00:00:00.000Z')).toEqual([]);
     expect(runMissingWeeklyRecovery('2026-10-01T00:00:00.000Z', '')).toEqual([]);
+  });
+
+  it('requests Anthropic JSON via structured outputs without forced tool_choice', () => {
+    const gas = gasFunctions();
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        items: { type: 'array', maxItems: 30, minItems: 1, items: { type: 'string' } },
+      },
+      required: ['items'],
+    };
+    const request = gas.__anthropicStructuredRequest(
+      { aiModel: 'claude-sonnet-5-5' },
+      'system',
+      'input',
+      schema,
+      16000,
+    );
+    expect(request.tool_choice).toBeUndefined();
+    expect(request.tools).toBeUndefined();
+    expect(request.output_config.format.type).toBe('json_schema');
+    expect(request.output_config.format.schema.properties.items.maxItems).toBeUndefined();
+    expect(request.output_config.format.schema.properties.items.minItems).toBe(1);
+    expect(schema.properties.items.maxItems).toBe(30);
+  });
+
+  it('parses Anthropic structured text and rejects refusal or truncation', () => {
+    const gas = gasFunctions();
+    expect(
+      gas.__parseAnthropicJson({
+        stop_reason: 'end_turn',
+        content: [
+          { type: 'thinking', thinking: '' },
+          { type: 'text', text: '{"markdown":"m","chatReply":"c"}' },
+        ],
+      }),
+    ).toEqual({ markdown: 'm', chatReply: 'c' });
+    expect(() => gas.__parseAnthropicJson({ stop_reason: 'refusal', content: [] })).toThrow(
+      'ANTHROPIC_REFUSAL',
+    );
+    expect(() =>
+      gas.__parseAnthropicJson({
+        stop_reason: 'max_tokens',
+        content: [{ type: 'text', text: '{' }],
+      }),
+    ).toThrow('INVALID_AI_OUTPUT');
+    expect(gas.__failureTransition('ANTHROPIC_REFUSAL', 0, 0).status).toBe('FAILED');
   });
 });

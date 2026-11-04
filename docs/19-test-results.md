@@ -10,7 +10,7 @@
 | AT-02 | 成功 | 同テストでGAS本文`ERROR`に対し502を確認 |
 | AT-03 | 成功 | 同テストで空イベント時にGAS fetchが呼ばれないことを確認 |
 | AT-04 | 成功 | `node --check --input-type=commonjs < gas/Code.gs`、`node --check worker/src/index.mjs`、Prettierが成功 |
-| AT-05 | 成功 | `npm test`: 46件成功、25件スキップ（旧Node版のDB統合テストを含む） |
+| AT-05 | 成功 | `npm test`: 48件成功、25件スキップ（旧Node版のDB統合テストを含む） |
 | AT-06 | 成功 | `gas-safety.test.ts`で`=`, `+`, `-`, `@`から始まる値のエスケープと、閲覧用シートへの再転記時のエスケープを確認。実際のGoogle Sheets上で数式評価されないことはLTで確認待ち |
 | AT-07 | 成功 | 文頭Botメンション後の改行付き`使い方`を認識し、途中メンションを無視することをVMで確認 |
 | AT-08 | 成功 | `整理して`、`3日分整理して`、任意質問、32日上限超過の分類をVMで確認 |
@@ -29,6 +29,7 @@
 | AT-21 | 成功 | 週次最終失敗時に内部エラーを含まない固定文をLINE送信し、`FAILED_FINAL`へ進むことをVMモックで確認 |
 | AT-22 | 成功 | 15分以上`PROCESSING`に残った週次を元の週次キーで再開することをVMモックで確認 |
 | AT-23 | 成功 | グループ登録済みかつ自動週次開始後に直近キーがない場合だけ作成し、開始前週・未登録時は作らないことをVMモックで確認 |
+| AT-24 | 成功 | Anthropic向けリクエストに`tool_choice`・`tools`がなく`output_config.format`（`json_schema`）を使うこと、`maxItems`を外しても元スキーマを変更しないこと、拒否・途中切れ・thinkingブロック混在の応答処理をVMで確認。実APIでの`ANTHROPIC_HTTP_400`解消はLT-12・LT-14で確認待ち |
 | LT-03 | 成功 | 2026-11-04 JST、LINE DevelopersでCloudflare Worker URLのWebhook検証に成功（利用者実施） |
 
 以前に公開済みGAS URLへ行った読み取り検証では、`/exec`が302を返し、通常のリダイレクト追跡後には本文`OK`となることを確認した。この確認は旧デプロイ済みコードに対するものであり、最新コードの実機確認ではない。

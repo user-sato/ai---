@@ -857,9 +857,10 @@ function handleAiRequestFailure_(request, error) {
 
 function failureTransition_(errorCode, currentAttempts, nowMs) {
   const attempts = Number(currentAttempts || 0) + 1;
-  const permanent = /(HTTP_400|HTTP_401|HTTP_403|INPUT_LIMIT|INVALID_AI_OUTPUT)/.test(
-    String(errorCode),
-  );
+  const permanent =
+    /(HTTP_400|HTTP_401|HTTP_403|INPUT_LIMIT|INVALID_AI_OUTPUT|ANTHROPIC_REFUSAL)/.test(
+      String(errorCode),
+    );
   const status = permanent || attempts >= 3 ? 'FAILED' : 'REQUESTED';
   return {
     status: status,
@@ -1181,32 +1182,7 @@ function generateExecutiveReport_(messages, userPrompt, start, end, config, mana
   const input = executiveInput_(messages, userPrompt, start, end, managementItems);
   let result;
   if (config.aiProvider === 'anthropic') {
-    const response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({
-        model: config.aiModel,
-        max_tokens: 6000,
-        system: instruction,
-        messages: [{ role: 'user', content: input }],
-        tools: [
-          {
-            name: 'submit_executive_report',
-            description: '整理・統括結果を返す。',
-            input_schema: schema,
-          },
-        ],
-        tool_choice: { type: 'tool', name: 'submit_executive_report' },
-      }),
-      headers: { 'x-api-key': config.aiApiKey, 'anthropic-version': '2023-06-01' },
-      muteHttpExceptions: true,
-    });
-    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300)
-      throw new Error('ANTHROPIC_HTTP_' + response.getResponseCode());
-    const toolUse = (JSON.parse(response.getContentText()).content || []).find(
-      (block) => block.type === 'tool_use' && block.name === 'submit_executive_report',
-    );
-    result = toolUse?.input;
+    result = callAnthropicJson_(config, instruction, input, schema, 16000);
   } else {
     const response = UrlFetchApp.fetch('https://api.openai.com/v1/chat/completions', {
       method: 'post',
@@ -1311,39 +1287,69 @@ function extractWithOpenAI_(messages, schema, config) {
 }
 
 function extractWithAnthropic_(messages, schema, config) {
-  const request = {
+  const extraction = callAnthropicJson_(
+    config,
+    extractionInstruction_(),
+    extractionInput_(messages),
+    schema,
+    16000,
+  );
+  validateExtraction_(extraction, messages);
+  return extraction;
+}
+
+// Claude Sonnet 5.5 / Opus 5.5 などは強制tool_choice（type: tool/any）を400で拒否するため、
+// 構造化出力（output_config.format）でJSONを受け取る。スキーマ検証と根拠照合は呼出側で行う。
+function anthropicStructuredRequest_(config, system, input, schema, maxTokens) {
+  return {
     model: config.aiModel,
-    max_tokens: 4096,
-    system: extractionInstruction_(),
-    messages: [{ role: 'user', content: extractionInput_(messages) }],
-    tools: [
-      {
-        name: 'submit_secretary_extraction',
-        description: '会話から抽出した候補を指定形式で返す。',
-        input_schema: schema,
-      },
-    ],
-    tool_choice: { type: 'tool', name: 'submit_secretary_extraction' },
+    max_tokens: maxTokens,
+    system: system,
+    messages: [{ role: 'user', content: input }],
+    output_config: {
+      format: { type: 'json_schema', schema: anthropicCompatibleSchema_(schema) },
+    },
   };
+}
+
+// 構造化出力が受け付けない配列件数制約を除く。件数はvalidateExtraction_等で再検証する。
+function anthropicCompatibleSchema_(schema) {
+  if (Array.isArray(schema)) return schema.map(anthropicCompatibleSchema_);
+  if (!schema || typeof schema !== 'object') return schema;
+  const copy = {};
+  Object.keys(schema).forEach((key) => {
+    if (key === 'maxItems') return;
+    if (key === 'minItems' && Number(schema[key]) > 1) return;
+    copy[key] = anthropicCompatibleSchema_(schema[key]);
+  });
+  return copy;
+}
+
+function parseAnthropicJson_(body) {
+  if (body?.stop_reason === 'refusal') throw new Error('ANTHROPIC_REFUSAL');
+  if (body?.stop_reason === 'max_tokens') throw new Error('INVALID_AI_OUTPUT');
+  const text = (body?.content || [])
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error('INVALID_AI_OUTPUT');
+  }
+}
+
+function callAnthropicJson_(config, system, input, schema, maxTokens) {
   const response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify(request),
+    payload: JSON.stringify(anthropicStructuredRequest_(config, system, input, schema, maxTokens)),
     muteHttpExceptions: true,
-    headers: {
-      'x-api-key': config.aiApiKey,
-      'anthropic-version': '2023-06-01',
-    },
+    headers: { 'x-api-key': config.aiApiKey, 'anthropic-version': '2023-06-01' },
   });
-  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300)
-    throw new Error('ANTHROPIC_REQUEST_FAILED');
-  const content = JSON.parse(response.getContentText()).content || [];
-  const toolUse = content.find(
-    (block) => block.type === 'tool_use' && block.name === 'submit_secretary_extraction',
-  );
-  const extraction = toolUse && toolUse.input;
-  validateExtraction_(extraction, messages);
-  return extraction;
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error('ANTHROPIC_HTTP_' + code);
+  return parseAnthropicJson_(JSON.parse(response.getContentText()));
 }
 
 function validateExtraction_(extraction, messages) {

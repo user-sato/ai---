@@ -31,6 +31,7 @@
 | AT-21 | 週次最終失敗通知 | `FAILED_TO_NOTIFY`の週次行 | 内部エラー詳細を出さずLINE固定文を送り`FAILED_FINAL` |
 | AT-22 | 週次強制終了回復 | 15分以上`PROCESSING`の週次行 | 5分ジョブが元の週次キーで自動再開 |
 | AT-23 | 週次トリガー欠測 | 登録済みグループで開始後の直近キーがない／開始前・グループ未登録 | 5分ジョブが欠測だけを補完し、導入前週と未登録時は作らない |
+| AT-24 | Claude構造化出力 | Anthropic向けリクエスト生成、`refusal`・`max_tokens`・thinkingブロック付き応答 | 強制`tool_choice`を送らず`output_config.format`の`json_schema`を使う。textブロックだけをJSON解析し、拒否は恒久失敗、途中切れは不正出力として扱う |
 
 ## 実機テスト
 

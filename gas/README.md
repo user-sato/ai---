@@ -77,7 +77,7 @@ LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の�
 
 ### AI提供元の選択
 
-Claude APIを使う場合は、`AI_PROVIDER`を`anthropic`、`AI_API_KEY`をAnthropic Consoleで発行したキー、`AI_MODEL`を利用可能なClaudeモデル名にする。OpenAIの場合は`AI_PROVIDER`を`openai`にして同じ3プロパティへ設定する。従来の`OPENAI_API_KEY`と`OPENAI_MODEL`も互換用に読み取るが、新規設定では使わない。
+Claude APIを使う場合は、`AI_PROVIDER`を`anthropic`、`AI_API_KEY`をAnthropic Consoleで発行したキー、`AI_MODEL`を利用可能なClaudeモデル名にする。OpenAIの場合は`AI_PROVIDER`を`openai`にして同じ3プロパティへ設定する。Claudeでは構造化出力（`output_config.format`）でJSONを受け取る。Claude Sonnet 5.5などは強制ツール呼び出し（`tool_choice`の`tool`/`any`）を400で拒否するため使わない。構造化出力に対応したモデルを指定する。従来の`OPENAI_API_KEY`と`OPENAI_MODEL`も互換用に読み取るが、新規設定では使わない。
 
 ## AIを使う範囲
 
