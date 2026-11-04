@@ -40,7 +40,7 @@ LINE Group
 4. `setupProject` をApps Scriptエディタから一度実行し、Googleの権限を許可する。スプレッドシート内に必要なシートが作成される。
 5. `installTriggers` を一度実行する。5分ごとの解析と、日曜20時頃（JST）の週次処理を登録する。GASの時刻トリガーは厳密な秒単位ではなく、多少前後する。
 6. 「デプロイ → 新しいデプロイ → ウェブアプリ」を選ぶ。実行するユーザーは自分、アクセスできるユーザーはLINEから到達できる設定にする。組織のポリシーで公開できない場合、この構成だけではLINE Webhookを受信できない。
-7. GASのウェブアプリは`doPost`実行後にHTTP 302でGoogleの一時URLへリダイレクトするため、LINE DevelopersのWebhook URLへ直接設定できない。[Cloudflare Worker gateway](../worker/README.md)をデプロイし、LINE署名を検証してGASへ中継する。Workerはこの302を受信成功としてLINEへHTTP 200を返す。
+7. GASのウェブアプリは`doPost`実行後にHTTP 302でGoogleの一時URLへリダイレクトするため、LINE DevelopersのWebhook URLへ直接設定できない。[Cloudflare Worker gateway](../worker/README.md)をデプロイし、LINE署名を検証してGASへ中継する。WorkerはGASの最終本文が`OK`の場合だけLINEへHTTP 200を返す。
 8. Workerの`GAS_WEBHOOK_URL` Secretには、GAS URLを次のように設定する。`WEBHOOK_TOKEN`はURLエンコードする。
 
 ```text
@@ -65,9 +65,11 @@ Botはその発言のgroup IDを`LINE_GROUP_ID`としてScript Propertiesへ保�
 
 対象の`.txt`をBot専用Drive親フォルダへアップロードし、URLの`/d/`と次の`/`の間にあるファイルIDを`HISTORICAL_TRANSCRIPT_FILE_ID`へ設定する。Apps Scriptエディタから`importHistoricalTranscript`を一度実行する。
 
-LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の形式）を読み取り、`Messages`へ`HIST-...`のIDで追加する。同じファイルを再実行しても、同じ発言は重複しない。標準では`RECORDED`として記録するだけで、履歴全文をAIへ送らない。候補抽出も必要なら、先に`HISTORICAL_IMPORT_MODE=analyze`を設定するか、取り込み後に`queueHistoricalMessagesForAnalysis`を実行する。履歴本文は命令ではなく記録データとして扱われるため、本文中の依頼やURLをBotが実行することはない。
+LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の形式）を読み取り、`Messages`へ`HIST-...`のIDで追加する。同じファイルを再実行しても、同じ発言は重複しない。標準では`RECORDED`として記録するだけで、履歴全文をAIへ送らない。また履歴は週次レポートの対象外にする。候補抽出も必要なら、先に`HISTORICAL_IMPORT_MODE=analyze`を設定するか、取り込み後に`queueHistoricalMessagesForAnalysis`を実行する。履歴本文は命令ではなく記録データとして扱われるため、本文中の依頼やURLをBotが実行することはない。
 
 取り込みを確認したら、`HISTORICAL_TRANSCRIPT_FILE_ID`は削除してよい。元のテキストはDriveに保管され、`Messages`には解析に必要な発言本文も残る。
+
+このMVP更新より前に履歴を取り込んだ場合は、`excludeHistoricalMessagesFromWeeklyReports`を一度実行して、過去履歴を週次対象から外す。
 
 ### AI提供元の選択
 
@@ -82,7 +84,7 @@ Claude APIを使う場合は、`AI_PROVIDER`を`anthropic`、`AI_API_KEY`をAnth
 | 導入前履歴の保管 | GASの通常処理。標準ではAI送信しない |
 | 決定・タスク・課題の意味の抽出と根拠引用の選定 | AI API |
 
-通常は`signal_only`で、決定・依頼・課題・相談などの手掛かりがない発言のまとまりは`RECORDED`として保存し、AI APIを呼ばない。AIを使わなかった発言も週次の会話件数には含める。ルールだけで決定やタスクを確定登録することはない。
+通常は`signal_only`で、決定・依頼・課題・相談などの手掛かりがない発言は`RECORDED`として保存し、AI APIを呼ばない。AIを使わなかった発言も週次の会話件数には含める。`queueRecordedMessagesForAnalysis`を手動実行すれば、過去の`RECORDED`発言を後から解析できる。ルールだけで決定やタスクを確定登録することはない。
 
 ## claspを使う場合
 

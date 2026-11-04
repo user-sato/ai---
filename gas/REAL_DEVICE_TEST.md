@@ -58,7 +58,7 @@
 次回の打合せまでに、候補物件を確認して共有します。予算の上限は次回までに検討が必要です。
 ```
 
-5分待つか、Apps Scriptから`processPendingMessages`を一度実行する。`Messages`が`ANALYZED`になり、`Items`へ候補が入り、`TASK`または`ISSUE`が`PENDING`または`OPEN`になることを確認する。候補はまだ確定事項ではない。
+5分待つか、Apps Scriptから`processPendingMessages`を一度実行する。`Messages`が`ANALYZED`になり、`Items`へ候補が`PENDING`で入ることを確認する。候補はまだ確定事項ではない。
 
 ## 5. 承認・重複・週次
 

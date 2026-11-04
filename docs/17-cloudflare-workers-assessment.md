@@ -2,7 +2,7 @@
 
 検討日: 2026-11-04 JST
 
-更新: 実際のGAS Web Appで、`doPost`実行後に`script.googleusercontent.com`へのHTTP 302が返ることを確認した。LINE DevelopersのWebhook検証はこの302を受け付けなかったため、Workerを受信窓口として使う。WorkerはLINE署名を検証し、GASのGoogle向け302を受信成功としてLINEへHTTP 200で返す。実装は[`worker/README.md`](../worker/README.md)。
+更新: 実際のGAS Web Appで、`doPost`実行後に`script.googleusercontent.com`へのHTTP 302が返ることを確認した。LINE DevelopersのWebhook検証はこの302を受け付けなかったため、Workerを受信窓口として使う。WorkerはLINE署名を検証し、GASの最終本文が`OK`のときだけLINEへHTTP 200で返す。実装は[`worker/README.md`](../worker/README.md)。
 
 ## 結論
 
@@ -43,17 +43,16 @@ Cloudflare Workersは、公開HTTPS URLで受信でき、Workers RuntimeのWeb C
 
 1. `x-line-signature`と生のリクエスト本文を受信する。
 2. Worker Secretの`LINE_CHANNEL_SECRET`を使い、HMAC-SHA256署名を検証する。不一致なら401を返し、GASへは転送しない。
-3. JSONをparseし、`source.type === "group"`かつ`source.groupId === LINE_GROUP_ID`のイベントだけを残す。それ以外は200で無視する。
-4. `GAS_URL`へ、Worker Secretの`GAS_GATEWAY_TOKEN`を本文に追加してPOSTする。
-5. GASが成功した場合だけLINEへ2xxを返す。
+3. 空の`events`配列はGASへ転送せず200で応答する。
+4. `GAS_WEBHOOK_URL`へ、生の本文をそのままPOSTする。URLにはGASの`WEBHOOK_TOKEN`を含める。
+5. GASの302を追跡した最終本文が`OK`の場合だけLINEへ2xxを返す。
 
-GAS側では、現在のURLクエリの`WEBHOOK_TOKEN`を、Workerだけが付ける本文中の`gatewayToken`チェックへ置き換える。GASでもグループIDを再確認する。これにより、GAS URLへ直接POSTされてもgateway tokenを持たなければ無視される。
+GAS側でもグループIDを再確認する。GAS URLへ直接POSTされても、推測困難な`WEBHOOK_TOKEN`がなければ無視される。
 
-Worker Secretに置く値は次の3つだけでよい。
+Worker Secretに置く値は次の2つだけでよい。
 
 - `LINE_CHANNEL_SECRET`
-- `LINE_GROUP_ID`（秘密ではないがWorker設定値として置ける）
-- `GAS_URL` と `GAS_GATEWAY_TOKEN`
+- `GAS_WEBHOOK_URL`
 
 LINE Push、OpenAI APIキー、Google Drive IDは引き続きGASのScript Propertiesに置く。Workerにコピーしない。
 
@@ -68,9 +67,9 @@ Cloudflare CronはUTCで動く。今回の案では週次・解析のスケジ�
 ## 導入時の注意
 
 - Workerは**署名確認前に本文をJSON化・整形してはならない**。まず生バイト列で検証し、その後にparseする。
-- WorkerからGASへ転送する本文は、署名検証後に新しくJSON化してよい。GASはLINE署名を検証する役目を持たない。
+- WorkerからGASへは署名検証済みの生本文を転送する。GASはLINE署名を検証する役目を持たない。
 - WorkerがGASの応答待ち中に失敗した場合、LINEはWebhookを再送し得る。GAS側のMessage ID重複排除とLockServiceはそのまま必要。
-- Workerの`GAS_GATEWAY_TOKEN`が漏れた場合はCloudflare SecretとGAS Script Propertyを同時に更新する。GAS URLを秘密情報として扱わず、tokenを認証材料として扱う。
+- `WEBHOOK_TOKEN`が漏れた場合はGAS Script PropertyとWorker Secret内のGAS URLを同時に更新する。
 - Workerを追加しても、LINE Pushの送信不明状態、GASのクォータ、スプレッドシートを簡易台帳として使う制約は残る。
 
 ## 採用判断

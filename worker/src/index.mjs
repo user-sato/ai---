@@ -18,27 +18,27 @@ export default {
     if (!(await isValidLineSignature_(rawBody, signature, env.LINE_CHANNEL_SECRET))) {
       return new Response('Unauthorized', { status: 401 });
     }
+    let payload;
+    try {
+      payload = JSON.parse(new TextDecoder().decode(rawBody));
+    } catch {
+      return new Response('Bad request', { status: 400 });
+    }
+    // LINE's endpoint verification has no events. It needs no GAS invocation.
+    if (Array.isArray(payload.events) && payload.events.length === 0) return new Response('OK');
 
     try {
-      // GAS executes doPost, then responds with a redirect to a temporary
-      // googleusercontent.com output URL. Do not follow it: the temporary URL
-      // rejects POST, while the 302 itself proves GAS accepted the event.
+      // GAS executes doPost, then redirects to a temporary output URL. Following
+      // a normal 302 changes POST to GET and returns doPost's output body.
       const gasResponse = await fetch(env.GAS_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'content-type': request.headers.get('content-type') || 'application/json' },
         body: rawBody,
-        redirect: 'manual',
+        redirect: 'follow',
       });
-      const location = gasResponse.headers.get('location') || '';
-      const gasAccepted =
-        gasResponse.ok ||
-        ((gasResponse.status === 301 ||
-          gasResponse.status === 302 ||
-          gasResponse.status === 303 ||
-          gasResponse.status === 307 ||
-          gasResponse.status === 308) &&
-          location.startsWith('https://script.googleusercontent.com/'));
-      if (!gasAccepted) return new Response('Upstream unavailable', { status: 502 });
+      if (!gasResponse.ok || (await gasResponse.text()).trim() !== 'OK') {
+        return new Response('Upstream unavailable', { status: 502 });
+      }
       return new Response('OK', { status: 200 });
     } catch {
       // A 5xx lets LINE retry a transient delivery failure.

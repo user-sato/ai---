@@ -59,14 +59,15 @@ const HEADERS = {
 function doPost(e) {
   try {
     const config = config_();
-    if (!isWebhookTokenValid_(e, config)) return ok_();
+    if (!isWebhookTokenValid_(e, config)) return error_();
 
     const payload = JSON.parse((e.postData && e.postData.contents) || '{}');
     (payload.events || []).forEach((event) => receiveEvent_(event, config));
   } catch (error) {
-    // Returning an error makes LINE resend. The safe failure mode is to acknowledge
-    // malformed/unauthorized input and leave no data behind.
-    console.log('Webhook ignored: ' + safeError_(error));
+    // The Worker inspects this body and asks LINE to retry. Do not put details
+    // or secrets into the response.
+    console.log('Webhook failed: ' + safeError_(error));
+    return error_();
   }
   return ok_();
 }
@@ -130,7 +131,7 @@ function importHistoricalTranscript() {
         message.sentAt,
         message.body,
         config.historicalImportMode === 'analyze' ? 'NEW' : 'RECORDED',
-        '',
+        'HISTORICAL',
         0,
         '',
         '',
@@ -159,7 +160,38 @@ function queueHistoricalMessagesForAnalysis() {
         String(row.values[1]) === 'HISTORICAL_IMPORT:' + config.historicalTranscriptFileId &&
         String(row.values[5]) === 'RECORDED',
     );
-    rows.forEach((row) => sheet.getRange(row.number, 6, 1, 5).setValues([['NEW', '', 0, '', '']]));
+    rows.forEach((row) =>
+      sheet.getRange(row.number, 6, 1, 5).setValues([['FORCE_ANALYZE', '', 0, row.values[8], '']]),
+    );
+    return rows.length;
+  });
+}
+
+/** Manually sends previously record-only live messages through the AI in bounded batches. */
+function queueRecordedMessagesForAnalysis() {
+  const config = config_();
+  return withLock_(function () {
+    const sheet = sheet_(SHEETS.MESSAGES);
+    const rows = dataRows_(sheet).filter(
+      (row) =>
+        row.values[5] === 'RECORDED' && !String(row.values[1]).startsWith('HISTORICAL_IMPORT:'),
+    );
+    rows.forEach((row) =>
+      sheet.getRange(row.number, 6, 1, 5).setValues([['FORCE_ANALYZE', '', 0, row.values[8], '']]),
+    );
+    return rows.length;
+  });
+}
+
+/** One-time migration for historical rows imported before the HISTORICAL report marker existed. */
+function excludeHistoricalMessagesFromWeeklyReports() {
+  const config = config_();
+  return withLock_(function () {
+    const sheet = sheet_(SHEETS.MESSAGES);
+    const rows = dataRows_(sheet).filter((row) =>
+      String(row.values[1]).startsWith('HISTORICAL_IMPORT:'),
+    );
+    rows.forEach((row) => sheet.getRange(row.number, 9).setValue('HISTORICAL'));
     return rows.length;
   });
 }
@@ -191,21 +223,26 @@ function processPendingMessages() {
     recoverStaleProcessing_();
     const sheet = sheet_(SHEETS.MESSAGES);
     const rows = dataRows_(sheet);
-    const pending = rows.filter((row) => row.values[5] === 'NEW').slice(0, 20);
-    if (pending.length && !shouldAnalyzeBatch_(pending, config)) {
-      pending.forEach((row) => {
-        sheet.getRange(row.number, 6, 1, 5).setValues([['RECORDED', '', 0, row.values[8], '']]);
-      });
-      return [];
-    }
-
-    pending.forEach((row) => {
+    const pending = rows
+      .filter((row) => ['NEW', 'FORCE_ANALYZE'].includes(String(row.values[5])))
+      .slice(0, 20);
+    const analyze = pending.filter(
+      (row) =>
+        row.values[5] === 'FORCE_ANALYZE' ||
+        config.aiAnalysisMode === 'all' ||
+        isAnalysisRelevantMessage_(row.values[4]),
+    );
+    const recordOnly = pending.filter((row) => !analyze.includes(row));
+    recordOnly.forEach((row) => {
+      sheet.getRange(row.number, 6, 1, 5).setValues([['RECORDED', '', 0, row.values[8], '']]);
+    });
+    analyze.forEach((row) => {
       const attempts = Number(row.values[7] || 0) + 1;
       sheet
         .getRange(row.number, 6, 1, 4)
         .setValues([['PROCESSING', nowIso_(), attempts, row.values[8]]]);
     });
-    return pending.map((row) => ({
+    return analyze.map((row) => ({
       row: row.number,
       id: String(row.values[0]),
       body: String(row.values[4]),
@@ -216,16 +253,17 @@ function processPendingMessages() {
   });
 
   if (!batch.length) {
-    // A prior Drive failure gets another chance even when no new conversation arrived.
-    syncCurrentDocument_(config);
+    syncCurrentDocumentIfDirty_(config);
     return;
   }
 
   try {
     const extraction = extractWithAi_(batch, config);
     withLock_(function () {
-      saveExtraction_(batch, extraction);
-      syncViews_();
+      if (saveExtraction_(batch, extraction)) {
+        syncViews_();
+        markCurrentDocumentDirty_();
+      }
     });
   } catch (error) {
     withLock_(function () {
@@ -240,7 +278,7 @@ function processPendingMessages() {
   }
   // Drive/Docs can be slow; don't hold the global Sheet lock during its write.
   // If it fails, the saved extraction remains intact and the next trigger retries it.
-  syncCurrentDocument_(config);
+  syncCurrentDocumentIfDirty_(config);
 }
 
 /** Sunday around 20:00 JST. Trigger timing is approximate in Apps Script. */
@@ -251,9 +289,16 @@ function createWeeklyReport() {
     ensureSchema_();
     const reports = sheet_(SHEETS.REPORTS);
     const existing = findByColumn_(reports, 1, window.key);
-    if (existing && ['SENT', 'EMPTY', 'PROCESSING'].includes(String(existing.values[1]))) {
+    const properties = PropertiesService.getScriptProperties();
+    const processingKey = 'WEEKLY_PROCESSING_STARTED_AT:' + window.key;
+    if (existing && ['SENT', 'EMPTY'].includes(String(existing.values[1]))) {
       return null;
     }
+    if (existing && String(existing.values[1]) === 'PROCESSING') {
+      const started = new Date(properties.getProperty(processingKey) || 0).getTime();
+      if (started && Date.now() - started < 15 * 60 * 1000) return null;
+    }
+    properties.setProperty(processingKey, nowIso_());
     if (existing) {
       reports
         .getRange(existing.number, 2, 1, 7)
@@ -293,14 +338,24 @@ function createWeeklyReport() {
         return (
           ['ANALYZED', 'RECORDED'].includes(String(row.values[5])) &&
           !row.values[8] &&
+          sent >= window.start &&
           sent < window.end
         );
       });
-      const items = dataRows_(sheet_(SHEETS.ITEMS)).map((row) => row.values);
+      const items = dataRows_(sheet_(SHEETS.ITEMS))
+        .map((row) => row.values)
+        .filter((item) => {
+          const created = new Date(String(item[7]));
+          const updated = new Date(String(item[8]));
+          const confirmed = new Date(String(item[9]));
+          return [created, updated, confirmed].some(
+            (date) => date >= window.start && date < window.end,
+          );
+        });
       return { messages: messages, items: items };
     });
 
-    if (!snapshot.messages.length) {
+    if (!snapshot.messages.length && !snapshot.items.length) {
       withLock_(function () {
         sheet_(SHEETS.REPORTS)
           .getRange(report.row, 2, 1, 7)
@@ -315,6 +370,9 @@ function createWeeklyReport() {
               '',
             ],
           ]);
+        PropertiesService.getScriptProperties().deleteProperty(
+          'WEEKLY_PROCESSING_STARTED_AT:' + window.key,
+        );
       });
       return;
     }
@@ -355,6 +413,9 @@ function createWeeklyReport() {
             safeError_(error),
           ],
         ]);
+      PropertiesService.getScriptProperties().deleteProperty(
+        'WEEKLY_PROCESSING_STARTED_AT:' + window.key,
+      );
     });
     throw error;
   }
@@ -468,6 +529,7 @@ function handleCommand_(event, config) {
             ],
           ]);
         syncViews_();
+        markCurrentDocumentDirty_();
         return itemId + ': ' + status + ' に更新しました。';
       });
     }
@@ -651,6 +713,7 @@ function validateExtraction_(extraction, messages) {
 
 function saveExtraction_(messages, extraction) {
   const itemsSheet = sheet_(SHEETS.ITEMS);
+  let itemsChanged = false;
   extraction.items.forEach((candidate) => {
     const evidenceIds = candidate.evidence.map((evidence) => evidence.messageId).join(',');
     const quotes = candidate.evidence.map((evidence) => evidence.quote).join(' | ');
@@ -673,6 +736,7 @@ function saveExtraction_(messages, extraction) {
       itemsSheet
         .getRange(existing.number, 6, 1, 4)
         .setValues([[combinedIds, combinedQuotes, existing.values[7], nowIso_()]]);
+      itemsChanged = true;
       return;
     }
     itemsSheet.appendRow([
@@ -680,19 +744,21 @@ function saveExtraction_(messages, extraction) {
       candidate.kind,
       candidate.title,
       candidate.detail,
-      candidate.kind === 'ISSUE' ? 'OPEN' : 'PENDING',
+      'PENDING',
       evidenceIds,
       quotes,
       nowIso_(),
       nowIso_(),
       '',
     ]);
+    itemsChanged = true;
   });
   messages.forEach((message) =>
     sheet_(SHEETS.MESSAGES)
       .getRange(message.row, 6, 1, 5)
       .setValues([['ANALYZED', '', '', '', '']]),
   );
+  return itemsChanged;
 }
 
 function syncViews_() {
@@ -744,18 +810,34 @@ function syncCurrentDocument_(config) {
   doc.saveAndClose();
 }
 
+function markCurrentDocumentDirty_() {
+  PropertiesService.getScriptProperties().setProperty('CURRENT_DOC_DIRTY', '1');
+}
+
+function syncCurrentDocumentIfDirty_(config) {
+  const properties = PropertiesService.getScriptProperties();
+  if (properties.getProperty('CURRENT_DOC_DIRTY') !== '1') return;
+  syncCurrentDocument_(config);
+  properties.deleteProperty('CURRENT_DOC_DIRTY');
+}
+
 function createReportDocument_(window, snapshot, config) {
   const root = DriveApp.getFolderById(config.driveRootFolderId);
   const year = getOrCreateFolder_(root, Utilities.formatDate(window.start, TZ, 'yyyy'));
   const month = getOrCreateFolder_(year, Utilities.formatDate(window.start, TZ, 'yyyy-MM'));
   const weekly = getOrCreateFolder_(month, '週次レポート');
-  const doc = DocumentApp.create(
-    Utilities.formatDate(window.end, TZ, 'yyyy-MM-dd') + '_週次レポート',
-  );
-  const file = DriveApp.getFileById(doc.getId());
-  file.moveTo(weekly);
+  const title = Utilities.formatDate(window.end, TZ, 'yyyy-MM-dd') + '_週次レポート';
+  const matchingFiles = weekly.getFilesByName(title);
+  let doc;
+  if (matchingFiles.hasNext()) {
+    doc = DocumentApp.openById(matchingFiles.next().getId());
+  } else {
+    doc = DocumentApp.create(title);
+    DriveApp.getFileById(doc.getId()).moveTo(weekly);
+  }
 
   const body = doc.getBody();
+  body.clear();
   body.appendParagraph('AI書記｜週次レポート（速報版）');
   body.appendParagraph(
     '対象: ' + formatJst_(window.start) + ' 〜 ' + formatJst_(window.end) + '（終端排他）',
@@ -787,7 +869,11 @@ function sendWeeklyNotification_(row, window, documentUrl, retryKey, config) {
     return dataRows_(sheet_(SHEETS.ITEMS)).map((item) => item.values);
   });
   const confirmed = items.filter(
-    (item) => item[1] === 'DECISION' && item[4] === 'CONFIRMED',
+    (item) =>
+      item[1] === 'DECISION' &&
+      item[4] === 'CONFIRMED' &&
+      new Date(String(item[9])) >= window.start &&
+      new Date(String(item[9])) < window.end,
   ).length;
   const pending = items.filter((item) => item[4] === 'PENDING').length;
   const open = items.filter(
@@ -800,9 +886,9 @@ function sendWeeklyNotification_(row, window, documentUrl, retryKey, config) {
     formatJst_(window.end) +
     '\n新規確定: ' +
     confirmed +
-    '件 / 確認待ち: ' +
+    '件 / 現在の確認待ち: ' +
     pending +
-    '件 / 未解決: ' +
+    '件 / 現在の未解決: ' +
     open +
     '件\n詳細議事録: ' +
     documentUrl;
@@ -821,6 +907,9 @@ function sendWeeklyNotification_(row, window, documentUrl, retryKey, config) {
           '',
         ],
       ]);
+    PropertiesService.getScriptProperties().deleteProperty(
+      'WEEKLY_PROCESSING_STARTED_AT:' + window.key,
+    );
   });
 }
 
@@ -864,10 +953,14 @@ function lineRequest_(url, payload, config, retryKey) {
 function ensureSchema_() {
   Object.keys(HEADERS).forEach((name) => {
     const sheet = sheet_(name);
-    if (sheet.getLastRow() === 0) sheet.appendRow(HEADERS[name]);
-    if (sheet.getLastRow() >= 1) {
-      sheet.getRange(1, 1, 1, HEADERS[name].length).setValues([HEADERS[name]]);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(HEADERS[name]);
       sheet.setFrozenRows(1);
+      return;
+    }
+    const currentHeaders = sheet.getRange(1, 1, 1, HEADERS[name].length).getValues()[0];
+    if (currentHeaders.join('\u0000') !== HEADERS[name].join('\u0000')) {
+      sheet.getRange(1, 1, 1, HEADERS[name].length).setValues([HEADERS[name]]);
     }
   });
 }
@@ -892,15 +985,11 @@ function findByColumn_(sheet, column, value) {
   return dataRows_(sheet).find((row) => String(row.values[column - 1]) === String(value));
 }
 
-/**
- * The default avoids an AI request for batches that are only greetings or
- * acknowledgements. It never creates decisions or tasks on its own.
- */
-function shouldAnalyzeBatch_(rows, config) {
-  if (config.aiAnalysisMode === 'all') return true;
+/** Returns true only for a message worth semantic interpretation by the AI. */
+function isAnalysisRelevantMessage_(body) {
   const signal =
     /(決定|決まり|合意|方針|進め|やる|対応|お願い|依頼|担当|期限|締切|課題|問題|懸念|リスク|確認|相談|検討|次回|ミーティング|会議|MTG|打合せ|[?？])/i;
-  return rows.some((row) => signal.test(String(row.values[4] || '')));
+  return signal.test(String(body || ''));
 }
 
 function getOrCreateFolder_(parent, name) {
@@ -1083,4 +1172,7 @@ function safeError_(error) {
 }
 function ok_() {
   return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+}
+function error_() {
+  return ContentService.createTextOutput('ERROR').setMimeType(ContentService.MimeType.TEXT);
 }

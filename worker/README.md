@@ -1,6 +1,6 @@
 # Cloudflare Worker gateway
 
-LINEはGASウェブアプリが返すHTTP 302をWebhook検証で受け付けない。このWorkerはLINEの署名を検証し、GASが`doPost`実行後に返すGoogleの302を受信成功として扱い、LINEへHTTP 200を返す。
+LINEはGASウェブアプリが返すHTTP 302をWebhook検証で受け付けない。このWorkerはLINEの署名を検証してGASへ転送し、Googleの302先から返る本文が厳密に`OK`の場合だけLINEへHTTP 200を返す。GASが失敗した場合はLINEへ502を返し、再送を促す。
 
 ```text
 LINE -- signed POST --> Cloudflare Worker -- verified POST --> GAS
@@ -46,4 +46,4 @@ npx wrangler deploy
 - Worker URLをブラウザで開くと`LINE AI secretary gateway`が表示される。
 - LINE DevelopersのWebhook検証が成功する。
 - 署名がない、または不正なリクエストはHTTP 401になる。
-- GASが一時的に失敗した場合はHTTP 502を返すため、LINEが再送できる。
+- GASが`ERROR`または一時エラーを返した場合はHTTP 502を返すため、LINEが再送できる。

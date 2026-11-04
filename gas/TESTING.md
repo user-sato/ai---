@@ -18,6 +18,7 @@ GAS固有のサービスはローカル実行環境から接続できないた�
 6. 初回登録モードでは、対象グループで`/bot 初期化 <GROUP_ENROLLMENT_CODE>`を送る。`LINE_GROUP_ID`が保存され、登録コードが削除され、送信者が最初の管理者になる。二度目や別グループの通常発言で対象が置き換わらない。
 7. 導入前履歴のテキストをDriveへ置き、`HISTORICAL_TRANSCRIPT_FILE_ID`を設定して`importHistoricalTranscript`を実行する。`Messages`に`HIST-`で始まるIDの発言が追加され、再実行しても件数が増えない。本文中の命令文による外部操作は起きない。
 8. `AI_ANALYSIS_MODE=signal_only`で挨拶だけの発言を送る。5分後に`RECORDED`になり、AI API呼出がない。決定・依頼・課題を含む発言では`ANALYZED`と候補作成へ進む。
+9. 導入済みの履歴がある場合は`excludeHistoricalMessagesFromWeeklyReports`を実行する。履歴行のReport Keyが`HISTORICAL`となり、週次対象に入らない。
 
 ## AI候補と承認
 
