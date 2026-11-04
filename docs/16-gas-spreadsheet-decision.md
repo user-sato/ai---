@@ -29,3 +29,5 @@ GAS Web Appは`doPost(e)`へHTTPヘッダーを渡さないため、LINEの`x-li
 4. URL漏えい時はトークンをローテーションし、LINE DevelopersのWebhook URLを更新する。
 
 固定グループIDは認証ではなくフィルタである。署名検証、複数グループ、より確実な再試行・監査が必要になれば、Cloud Runなどの小さな受信ゲートウェイか、既存Node/PostgreSQL版へ移行する。
+
+Cloudflare Workersを署名検証専用ゲートウェイに使う案は[docs/17-cloudflare-workers-assessment.md](17-cloudflare-workers-assessment.md)に記録した。DBなしでGASの利便性を維持できるため、Cloud Runより先に検討する選択肢とする。

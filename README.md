@@ -25,6 +25,8 @@ LINEグループ → GAS Web App → Google Sheets（正本）
 
 本番相当のグループへ入れる前に、参加者へ外部保存・AI解析・Google Drive保存を説明し、合意を得てください。
 
+Cloudflare WorkersをWebhook入口だけに置くと、DBなしのままLINE署名検証を追加できます。[検討結果](docs/17-cloudflare-workers-assessment.md)を参照してください。Workerの導入・アカウント作成・デプロイはまだ行っていません。
+
 ## 大事な制約
 
 GAS Web AppではLINEの`x-line-signature`ヘッダーを取得できないため、LINE署名検証はできません。このMVPでは、長いランダムなWebhook URLトークンと固定グループIDで受信範囲を狭めます。これは署名検証と同等ではありません。詳細とトークン漏えい時の対応は[こちら](gas/README.md#セキュリティ上の制約)です。
