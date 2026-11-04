@@ -2,6 +2,8 @@
 
 検討日: 2026-11-04 JST
 
+更新: 実際のGAS Web Appで、`doPost`実行後に`script.googleusercontent.com`へのHTTP 302が返ることを確認した。LINE DevelopersのWebhook検証はこの302を受け付けなかったため、Workerを受信窓口として使う。WorkerはLINE署名を検証し、GASのGoogle向け302を受信成功としてLINEへHTTP 200で返す。実装は[`worker/README.md`](../worker/README.md)。
+
 ## 結論
 
 **1グループ・スプレッドシート正本のMVPには、Cloudflare WorkerをLINE Webhookの署名検証専用ゲートウェイとして足す案を推奨する。**
@@ -12,9 +14,9 @@
 LINE
   -> Cloudflare Worker
        - x-line-signatureを生の本文で検証
-       - 許可されたLINE_GROUP_IDだけを通す
        - GASへ内部トークン付きで転送
   -> GAS
+       - 許可されたLINE_GROUP_IDだけを処理
        - Google Sheetsを正本として保存
        - OpenAI解析、Google Docs、週次処理、LINEコマンド
 ```

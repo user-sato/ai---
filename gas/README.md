@@ -40,13 +40,14 @@ LINE Group
 4. `setupProject` をApps Scriptエディタから一度実行し、Googleの権限を許可する。スプレッドシート内に必要なシートが作成される。
 5. `installTriggers` を一度実行する。5分ごとの解析と、日曜20時頃（JST）の週次処理を登録する。GASの時刻トリガーは厳密な秒単位ではなく、多少前後する。
 6. 「デプロイ → 新しいデプロイ → ウェブアプリ」を選ぶ。実行するユーザーは自分、アクセスできるユーザーはLINEから到達できる設定にする。組織のポリシーで公開できない場合、この構成だけではLINE Webhookを受信できない。
-7. LINE DevelopersのWebhook URLを次のように設定する。`WEBHOOK_TOKEN`はURLエンコードする。
+7. GASのウェブアプリは`doPost`実行後にHTTP 302でGoogleの一時URLへリダイレクトするため、LINE DevelopersのWebhook URLへ直接設定できない。[Cloudflare Worker gateway](../worker/README.md)をデプロイし、LINE署名を検証してGASへ中継する。Workerはこの302を受信成功としてLINEへHTTP 200を返す。
+8. Workerの`GAS_WEBHOOK_URL` Secretには、GAS URLを次のように設定する。`WEBHOOK_TOKEN`はURLエンコードする。
 
 ```text
 https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?webhook_token=<WEBHOOK_TOKEN>
 ```
 
-8. LINE Webhookを有効にし、合意済みのテストグループでテキストを1件送る。`Messages`に`NEW`で入ること、数分後に`ANALYZED`になり`Items`へ候補が出ることを確認する。
+9. LINE DevelopersのWebhook URLにはWorker URLを設定して有効にする。合意済みのテストグループでテキストを1件送る。`Messages`に`NEW`または`RECORDED`で入ること、数分後に必要な発言は`ANALYZED`になり`Items`へ候補が出ることを確認する。
 
 ### Group IDが分からない初回登録
 
@@ -97,17 +98,18 @@ clasp push
 
 ## セキュリティ上の制約
 
-GAS Web Appの`doPost(e)`には、LINEが送る`x-line-signature`ヘッダーが渡されません。そのため、この構成はLINE署名検証を実装できません。
+GAS Web Appの`doPost(e)`には、LINEが送る`x-line-signature`ヘッダーが渡されません。またGASのURLは`doPost`実行後にHTTP 302を返すため、LINEのWebhook検証には使えません。Workerが受信窓口になることで、LINE署名検証とHTTP 200応答を行う。
 
 代わりに、次を必須とします。
 
-- 32文字以上の推測困難な`WEBHOOK_TOKEN`をWebhook URLのクエリに含める
+- WorkerでLINE署名を検証する
+- 32文字以上の推測困難な`WEBHOOK_TOKEN`をWorkerからGASへ送るURLのクエリに含める
 - `LINE_GROUP_ID`が完全一致するイベントだけ処理する
 - 未知のグループ、個人トーク、画像、空テキスト、無効トークンは記録も返信もしない
 - キーはScript Propertiesだけに保存する
 - `LockService`とMessage ID照合で同時書込み・再送の重複を防ぐ
 
-group IDは秘密ではありません。URLが漏れた場合は`WEBHOOK_TOKEN`を新しいランダム値に変更し、LINE DevelopersのWebhook URLも更新する。署名検証が必要になった時点で、Cloud Runなどヘッダーを受け取れる小さな受信窓口を追加してください。
+group IDは秘密ではありません。URLが漏れた場合は`WEBHOOK_TOKEN`を新しいランダム値に変更し、Worker SecretのGAS URLを更新する。
 
 ## コマンド
 

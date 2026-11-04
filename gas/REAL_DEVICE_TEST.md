@@ -24,20 +24,21 @@
 
 1. `installTriggers`を一度実行する。
 2. ウェブアプリとして新しいデプロイを作成する。実行ユーザーは自分、アクセスはLINEから到達できる設定にする。
-3. LINE DevelopersのWebhook URLへ次を設定し、Webhookを有効にする。
+3. [Cloudflare Worker gateway](../worker/README.md)をデプロイし、`LINE_CHANNEL_SECRET`と次のGAS URLをWorker Secretに設定する。
 
    ```text
    https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?webhook_token=<WEBHOOK_TOKEN>
    ```
 
-4. Botをテストグループへ招待し、次を一度だけ送る。
+4. LINE DevelopersのWebhook URLにはGAS URLではなくWorker URLを設定し、検証成功後にWebhookを有効にする。
+5. Botをテストグループへ招待し、次を一度だけ送る。
 
    ```text
    /bot 初期化 <GROUP_ENROLLMENT_CODE>
    ```
 
    「このグループをAI書記Botの対象として登録しました。」と返信され、`LINE_GROUP_ID`が自動保存されれば合格。
-5. 次を送る。
+6. 次を送る。
 
    ```text
    /bot 状態
