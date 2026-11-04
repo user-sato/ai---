@@ -1,8 +1,8 @@
 /**
  * LINE AI書記Bot — GAS + Google Sheets MVP
  *
- * Set secrets only in Script Properties. Never paste them in this file.
- * See gas/README.md for deployment and configuration.
+ * 秘密情報はScript Propertiesにだけ設定し、このファイルへ貼り付けない。
+ * デプロイと設定はgas/README.mdを参照。
  */
 
 const TZ = 'Asia/Tokyo';
@@ -79,7 +79,7 @@ const HEADERS = {
 };
 let spreadsheetCache_ = null;
 
-/** Receives LINE's POST. GAS does not expose x-line-signature: see README. */
+/** LINEのPOSTを受信する。GASはx-line-signatureを取得できない（README参照）。 */
 function doPost(e) {
   try {
     const config = config_();
@@ -88,8 +88,7 @@ function doPost(e) {
     const payload = JSON.parse((e.postData && e.postData.contents) || '{}');
     (payload.events || []).forEach((event) => receiveEvent_(event, config));
   } catch (error) {
-    // The Worker inspects this body and asks LINE to retry. Do not put details
-    // or secrets into the response.
+    // Workerはこの本文を見てLINEへ再送を促す。応答に詳細や秘密情報を含めない。
     console.log('Webhook failed: ' + safeError_(error));
     return error_();
   }
@@ -100,7 +99,7 @@ function doGet() {
   return ContentService.createTextOutput('LINE AI secretary GAS endpoint');
 }
 
-/** Run once manually after configuring SPREADSHEET_ID. */
+/** SPREADSHEET_IDを設定した後に手動で一度だけ実行する。 */
 function setupProject() {
   withLock_(function () {
     ensureSchema_();
@@ -109,8 +108,8 @@ function setupProject() {
 }
 
 /**
- * Checks Sheets, Drive, and configuration without sending LINE messages or
- * calling the AI provider. Run this before a real-device webhook test.
+ * LINE送信やAI呼出をせずに、Sheets・Drive・設定を確認する。
+ * 実機でのWebhookテスト前に実行する。
  */
 function runPreflightCheck() {
   const config = config_();
@@ -131,9 +130,8 @@ function runPreflightCheck() {
 }
 
 /**
- * Imports a LINE desktop-exported UTF-8 transcript from Drive exactly once.
- * Set HISTORICAL_TRANSCRIPT_FILE_ID first. Imported messages are queued for the
- * ordinary extraction job, but their text is always treated as untrusted data.
+ * LINEデスクトップ版で書き出したUTF-8のトーク履歴をDriveから一度だけ取り込む。
+ * 先にHISTORICAL_TRANSCRIPT_FILE_IDを設定する。取り込んだ本文は常に信頼しない記録データとして扱う。
  */
 function importHistoricalTranscript() {
   const config = config_();
@@ -174,7 +172,7 @@ function importHistoricalTranscript() {
   });
 }
 
-/** Deliberately queues a previously record-only historical import for AI analysis. */
+/** 記録のみで取り込んだ履歴を、明示的にAI解析待ちへ戻す。 */
 function queueHistoricalMessagesForAnalysis() {
   const config = config_();
   if (!config.historicalTranscriptFileId) throw new Error('HISTORICAL_TRANSCRIPT_FILE_ID_REQUIRED');
@@ -192,7 +190,7 @@ function queueHistoricalMessagesForAnalysis() {
   });
 }
 
-/** Manually sends previously record-only live messages through the AI in bounded batches. */
+/** 記録のみだった受信済み発言を、件数を区切って手動でAI解析へ回す。 */
 function queueRecordedMessagesForAnalysis() {
   const config = config_();
   return withLock_(function () {
@@ -208,7 +206,7 @@ function queueRecordedMessagesForAnalysis() {
   });
 }
 
-/** One-time migration for historical rows imported before the HISTORICAL report marker existed. */
+/** HISTORICAL印の導入前に取り込んだ履歴行へ印を付ける一回限りの移行処理。 */
 function excludeHistoricalMessagesFromWeeklyReports() {
   const config = config_();
   return withLock_(function () {
@@ -221,7 +219,7 @@ function excludeHistoricalMessagesFromWeeklyReports() {
   });
 }
 
-/** Installs the two time-based jobs without deleting unrelated user triggers. */
+/** 2つの時間トリガーを登録する。無関係な利用者のトリガーは削除しない。 */
 function installTriggers() {
   ensureWeeklyAutomationMarker_();
   const names = ['processPendingMessages', 'createWeeklyReport'];
@@ -239,8 +237,8 @@ function installTriggers() {
 }
 
 /**
- * Every five minutes: extracts pending messages in a bounded batch and updates
- * the Bot-owned Sheets/Docs. It intentionally does not infer assignees or due dates.
+ * 5分ごとに未処理の発言を件数上限付きで抽出し、Bot管理のSheets・Docsを更新する。
+ * 担当者や期限は意図的に推測しない。
  */
 function processPendingMessages() {
   const config = config_();
@@ -307,8 +305,8 @@ function processPendingMessages() {
     runSummaryJobs_(config);
     throw error;
   }
-  // Drive/Docs can be slow; don't hold the global Sheet lock during its write.
-  // If it fails, the saved extraction remains intact and the next trigger retries it.
+  // Drive・Docsは遅いことがあるため、書き込み中はシート全体のロックを保持しない。
+  // 失敗しても保存済みの抽出結果は残り、次回のトリガーで再試行する。
   try {
     syncCurrentDocumentIfDirty_(config);
   } finally {
@@ -334,7 +332,7 @@ function runSummaryJobs_(config) {
   }
 }
 
-/** Sunday around 20:00 JST. Trigger timing is approximate in Apps Script. */
+/** 日曜20時頃（JST）に実行する。Apps Scriptのトリガー時刻は多少前後する。 */
 function createWeeklyReport() {
   const config = config_();
   if (!config.groupId) return;
@@ -568,7 +566,7 @@ function createWeeklyReportForWindow_(window, config) {
   }
 }
 
-/** Run manually after an outage. Keeps the same persisted LINE retry key. */
+/** 障害復旧後に手動で実行する。保存済みのLINE retry keyをそのまま使う。 */
 function retryPendingWeeklyNotifications() {
   const config = config_();
   retryPendingWeeklyNotifications_(config);
@@ -877,20 +875,38 @@ function retryCountersAfterFailure_(transition) {
 
 function summarySourceMessages_(start, end) {
   return withLock_(function () {
-    return dataRows_(sheet_(SHEETS.MESSAGES))
-      .filter((row) => isSummarySourceRow_(row.values, start, end))
-      .sort((left, right) => String(left.values[3]).localeCompare(String(right.values[3])))
-      .map((row) => ({
-        id: String(row.values[0]),
-        sentAt: String(row.values[3]),
-        body: String(row.values[4]),
-      }));
+    return selectSummarySourceRows_(dataRows_(sheet_(SHEETS.MESSAGES)), start, end).map((row) => ({
+      id: String(row.values[0]),
+      sentAt: String(row.values[3]),
+      body: String(row.values[4]),
+    }));
   });
+}
+
+// 期間整理の対象行を選ぶ。導入前に取り込んだ履歴（HISTORICAL）も含める。
+// ただし最初のLINE受信以降の時間帯はWebhookで受けた発言を正とし、履歴側の同じ発言を二重に入れない。
+function selectSummarySourceRows_(rows, start, end) {
+  const liveStart = rows
+    .filter((row) => !isHistoricalRow_(row.values))
+    .map((row) => new Date(String(row.values[3])).getTime())
+    .filter((time) => !Number.isNaN(time))
+    .reduce((min, time) => Math.min(min, time), Infinity);
+  return rows
+    .filter((row) => isSummarySourceRow_(row.values, start, end))
+    .filter(
+      (row) =>
+        !isHistoricalRow_(row.values) || new Date(String(row.values[3])).getTime() < liveStart,
+    )
+    .sort((left, right) => String(left.values[3]).localeCompare(String(right.values[3])));
+}
+
+function isHistoricalRow_(values) {
+  return String(values[8]) === 'HISTORICAL' || String(values[0]).startsWith('HIST-');
 }
 
 function isSummarySourceRow_(values, start, end) {
   const sent = new Date(String(values[3]));
-  return sent >= start && sent < end && String(values[8]) !== 'HISTORICAL';
+  return sent >= start && sent < end;
 }
 
 function isWeeklySourceRow_(values, end) {
@@ -965,8 +981,8 @@ function receiveEvent_(event, config) {
 }
 
 /**
- * One-time bootstrap for users who do not yet know LINE's group ID.
- * It requires the webhook URL token and an enrollment code typed in the group.
+ * LINEのグループIDが分からない利用者向けの一回限りの初期登録。
+ * Webhook URLのトークンと、グループで送信された登録コードの両方を必要とする。
  */
 function enrollGroup_(event, config, command) {
   if (event.type !== 'message' || event.message?.type !== 'text') return;
@@ -974,7 +990,7 @@ function enrollGroup_(event, config, command) {
 
   withLock_(function () {
     const properties = PropertiesService.getScriptProperties();
-    // Re-read under the lock so a concurrent request cannot replace the group.
+    // 同時リクエストで対象グループが置き換わらないよう、ロック内で読み直す。
     if (properties.getProperty('LINE_GROUP_ID')) return;
     if (properties.getProperty('GROUP_ENROLLMENT_CODE') !== config.groupEnrollmentCode) return;
     properties.setProperty('LINE_GROUP_ID', String(event.source.groupId));
@@ -1113,7 +1129,7 @@ function approvedStatusForKind_(kind) {
   return 'OPEN';
 }
 
-/** Returns a command only when the bot itself is mentioned at the start of a message. */
+/** Bot自身が文頭でメンションされた場合だけコマンドを返す。 */
 function mentionCommand_(event, config) {
   if (event.type !== 'message' || event.message?.type !== 'text') return '';
   const mentions = event.message.mention?.mentionees || [];
@@ -1688,7 +1704,7 @@ function findByColumn_(sheet, column, value) {
   return dataRows_(sheet).find((row) => String(row.values[column - 1]) === String(value));
 }
 
-/** Returns true only for a message worth semantic interpretation by the AI. */
+/** AIで意味を解釈する価値がある発言の場合だけtrueを返す。 */
 function isAnalysisRelevantMessage_(body) {
   const signal =
     /(決定|決まり|合意|方針|進め|やる|対応|お願い|依頼|担当|期限|締切|課題|問題|懸念|リスク|確認|相談|検討|次回|ミーティング|会議|MTG|打合せ|[?？])/i;
@@ -1734,7 +1750,7 @@ function windowFromKey_(key) {
   return { key: key, start: new Date(end.getTime() - 7 * 86400000), end: end };
 }
 
-/** Parses LINE's text-export format. System notices without a sender are skipped. */
+/** LINEのテキスト書き出し形式を解析する。送信者のないシステム通知は読み飛ばす。 */
 function parseLineTranscript_(text, sourceFileId) {
   const messages = [];
   let date = null;
@@ -1776,10 +1792,10 @@ function parseLineTranscript_(text, sourceFileId) {
         };
         messages.push(current);
       } else if (/^\d{1,2}:\d{2}\t/.test(line)) {
-        // A timestamp with no sender is a LINE system notice, not a continuation.
+        // 送信者のない時刻行はLINEのシステム通知であり、前の発言の続きではない。
         current = null;
       } else if (current && line) {
-        // LINE represents a multi-line message as unprefixed continuation lines.
+        // LINEは複数行の発言を、時刻・送信者のない続きの行として書き出す。
         current.body += '\n' + line;
       }
     });
@@ -1873,7 +1889,7 @@ function normalize_(value) {
     .replace(/[\s\p{P}\p{S}]/gu, '');
 }
 
-/** Prevents a LINE message or AI field from becoming a Sheet formula. */
+/** LINEの発言やAIの出力がシートの数式として評価されないようにする。 */
 function asPlainText_(value) {
   const text = String(value ?? '');
   return /^[=+\-@]/.test(text) ? "'" + text : text;

@@ -1,8 +1,8 @@
 /**
- * LINE -> Cloudflare Worker -> GAS gateway.
+ * LINE → Cloudflare Worker → GAS の中継ゲートウェイ。
  *
- * Secrets are configured with `wrangler secret put`; never add them to this file.
- * GAS_WEBHOOK_URL must be the GAS /exec URL including its webhook_token query.
+ * 秘密情報は`wrangler secret put`で設定し、このファイルへ書かない。
+ * GAS_WEBHOOK_URLは、webhook_tokenクエリを含むGASの/exec URLにする。
  */
 export default {
   async fetch(request, env) {
@@ -24,12 +24,12 @@ export default {
     } catch {
       return new Response('Bad request', { status: 400 });
     }
-    // LINE's endpoint verification has no events. It needs no GAS invocation.
+    // LINEのWebhook検証はeventsが空のため、GASを呼び出す必要がない。
     if (Array.isArray(payload.events) && payload.events.length === 0) return new Response('OK');
 
     try {
-      // GAS executes doPost, then redirects to a temporary output URL. Following
-      // a normal 302 changes POST to GET and returns doPost's output body.
+      // GASはdoPost実行後に一時的な出力URLへリダイレクトする。通常どおり302を追うと
+      // POSTがGETに変わり、doPostの出力本文が返る。
       const gasResponse = await fetch(env.GAS_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'content-type': request.headers.get('content-type') || 'application/json' },
@@ -41,7 +41,7 @@ export default {
       }
       return new Response('OK', { status: 200 });
     } catch {
-      // A 5xx lets LINE retry a transient delivery failure.
+      // 5xxを返すと、LINEが一時的な配信失敗を再送できる。
       return new Response('Upstream unavailable', { status: 502 });
     }
   },

@@ -49,6 +49,7 @@ function gasFunctions(): any {
       ' globalThis.__validateExtraction = validateExtraction_;' +
       ' globalThis.__isDailyAiLimitReached = isDailyAiLimitReached_;' +
       ' globalThis.__isSummarySourceRow = isSummarySourceRow_;' +
+      ' globalThis.__selectSummarySourceRows = selectSummarySourceRows_;' +
       ' globalThis.__isWeeklySourceRow = isWeeklySourceRow_;' +
       ' globalThis.__approvedStatusForKind = approvedStatusForKind_;' +
       ' globalThis.__validateExecutiveResult = validateExecutiveResult_;' +
@@ -385,15 +386,25 @@ describe('GAS sheet value safety', () => {
     expect(functions.__isDailyAiLimitReached(rows, new Date('2026-11-04'), 20)).toBe(true);
   });
 
-  it('excludes imported historical rows from normal period organization', () => {
+  it('includes imported historical rows in period organization without overlap', () => {
     const functions = gasFunctions();
-    const start = new Date('2026-11-01T00:00:00.000Z');
+    const start = new Date('2026-10-01T00:00:00.000Z');
     const end = new Date('2026-11-05T00:00:00.000Z');
-    const current = ['M-1', '', '', '2026-11-04T00:00:00.000Z', '本文', '', '', '', ''];
-    const historical = current.slice();
-    historical[8] = 'HISTORICAL';
-    expect(functions.__isSummarySourceRow(current, start, end)).toBe(true);
-    expect(functions.__isSummarySourceRow(historical, start, end)).toBe(false);
+    const row = (id: string, sentAt: string, key = '') => ({
+      values: [id, '', '', sentAt, '本文', '', '', '', key],
+    });
+    const rows = [
+      row('M-1', '2026-11-04T00:00:00.000Z'),
+      row('HIST-old', '2026-10-20T00:00:00.000Z', 'HISTORICAL'),
+      row('HIST-overlap', '2026-11-04T01:00:00.000Z', 'HISTORICAL'),
+      row('HIST-outside', '2026-09-01T00:00:00.000Z', 'HISTORICAL'),
+    ];
+    expect(
+      functions.__selectSummarySourceRows(rows, start, end).map((r: any) => r.values[0]),
+    ).toEqual(['HIST-old', 'M-1']);
+    expect(
+      functions.__selectSummarySourceRows(rows.slice(1), start, end).map((r: any) => r.values[0]),
+    ).toEqual(['HIST-old', 'HIST-overlap']);
   });
 
   it('maps approved future direction to ACTIVE without auto-confirming it', () => {

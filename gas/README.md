@@ -69,7 +69,7 @@ Botはその発言のgroup IDを`LINE_GROUP_ID`としてScript Propertiesへ保�
 
 対象の`.txt`をBot専用Drive親フォルダへアップロードし、URLの`/d/`と次の`/`の間にあるファイルIDを`HISTORICAL_TRANSCRIPT_FILE_ID`へ設定する。Apps Scriptエディタから`importHistoricalTranscript`を一度実行する。
 
-LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の形式）を読み取り、`Messages`へ`HIST-...`のIDで追加する。同じファイルを再実行しても、同じ発言は重複しない。標準では`RECORDED`として記録するだけで、履歴全文をAIへ送らない。また履歴は週次レポートの対象外にする。候補抽出も必要なら、先に`HISTORICAL_IMPORT_MODE=analyze`を設定するか、取り込み後に`queueHistoricalMessagesForAnalysis`を実行する。履歴本文は命令ではなく記録データとして扱われるため、本文中の依頼やURLをBotが実行することはない。
+LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の形式）を読み取り、`Messages`へ`HIST-...`のIDで追加する。同じファイルを再実行しても、同じ発言は重複しない。標準では`RECORDED`として記録するだけで、履歴全文をAIへ送らない。履歴は週次レポートの対象外だが、メンションによる期間整理・統括相談の対象には含める。Bot導入後に受信した発言と時間帯が重なる部分は、受信した発言を正として履歴側を使わない。候補抽出も必要なら、先に`HISTORICAL_IMPORT_MODE=analyze`を設定するか、取り込み後に`queueHistoricalMessagesForAnalysis`を実行する。履歴本文は命令ではなく記録データとして扱われるため、本文中の依頼やURLをBotが実行することはない。
 
 取り込みを確認したら、`HISTORICAL_TRANSCRIPT_FILE_ID`は削除してよい。元のテキストはDriveに保管され、`Messages`には解析に必要な発言本文も残る。
 
@@ -140,7 +140,7 @@ LINE Messaging APIにはグループのノートへ投稿するAPIがないた�
 
 週次は対象Message IDをAI結果とともに`Reports`へ保存し、Markdown作成前に固定する。DriveやLINEの再試行中に新しい発言が届いても、保存済みAI結果へ混ぜて報告済みにしない。締切後に遅れて届いた古い未報告発言は次回週次へ含める。
 
-メンションによるAI依頼はグループ全体で1日20回、指定期間は1〜31日、AIへ渡す会話と管理事項は合計60,000文字までである。導入前に取り込んだ496件を含む`HISTORICAL`行は、通常の期間整理と週次から除外する。
+メンションによるAI依頼はグループ全体で1日20回、指定期間は1〜31日、AIへ渡す会話と管理事項は合計60,000文字までである。導入前に取り込んだ496件を含む`HISTORICAL`行は、週次から除外し、メンションによる期間整理・統括相談には含める。最初のLINE受信以降の時間帯では、履歴行を使わず受信した発言だけを使う。
 
 ## 再試行と手動復旧
 
