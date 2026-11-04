@@ -8,7 +8,7 @@
 
 `Messages`、`Items`、`Reports`、`SummaryRequests`シートを正本とする。`Tasks`、`Issues`、`Decisions`は閲覧用のBot管理シート、Google Docsは現況書、Drive上のMarkdownは週次・日次統括レポートの出力先。GASのScript PropertiesにIDと秘密情報を置き、スプレッドシートには書かない。
 
-Webhookは受信後、本文を`Messages`へ追加してすぐ200を返す。Claude/OpenAI処理は5分の時間トリガーで行い、候補保存・閲覧シート同期・現況Docs更新を行う。週次は日曜20時頃JSTにトリガーで作る。GASの時刻トリガーは厳密な時刻実行を保証しない。
+WebhookはWorkerで署名検証後にGASへ転送し、GASは本文を`Messages`へ追加する。WorkerはGASのリダイレクト先の最終本文が`OK`の場合だけLINEへ200を返す。Claude/OpenAI処理は5分の時間トリガーで行い、候補保存・閲覧シート同期・現況Docs更新を行う。週次は日曜20時頃JSTにトリガーで作る。GASの時刻トリガーは厳密な時刻実行を保証しない。
 
 ## 重複・同時実行
 
@@ -26,8 +26,8 @@ GAS Web Appは`doPost(e)`へHTTPヘッダーを渡さないため、LINEの`x-li
 
 1. 許可グループの`LINE_GROUP_ID`を固定し、不一致イベントを無視する。
 2. 32文字以上のランダムな`WEBHOOK_TOKEN`をWebhook URLに含め、不一致リクエストを無視する。
-3. URLトークン、LINEアクセストークン、OpenAIキー、管理者IDをScript Properties以外へ保存しない。
-4. URL漏えい時はトークンをローテーションし、LINE DevelopersのWebhook URLを更新する。
+3. URLトークン、LINEアクセストークン、AI APIキー、管理者IDをScript Properties以外へ保存しない。
+4. URL漏えい時はトークンをローテーションし、Worker Secretの`GAS_WEBHOOK_URL`を更新する。LINE DevelopersのWebhook URLはWorker URLのまま変更しない。
 
 固定グループIDは認証ではなくフィルタである。署名検証はWorkerで行い、複数グループやさらに厳密な再試行・監査が必要になれば、既存Node/PostgreSQL版へ移行する。
 

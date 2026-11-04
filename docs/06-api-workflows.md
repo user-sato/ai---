@@ -1,80 +1,40 @@
-# 06 APIと処理フロー
-
-## 内部API（例）
-| Method | Path | 用途 |
-|---|---|---|
-| POST | `/webhook/line` | LINEイベント受信（署名検証必須） |
-| POST | `/internal/jobs/analyze` | 未処理メッセージ解析 |
-| POST | `/internal/jobs/sync` | Docs/Sheets同期 |
-| GAS trigger | `createWeeklyReport` | 週次Markdown作成・LINE通知 |
-| POST | `/internal/jobs/monthly-rollover` | 月フォルダ作成 |
-| POST | `/internal/jobs/monthly-report` | 月次Docs作成 |
-| GET | `/healthz` | ヘルスチェック（機密を返さない） |
-
-`/internal/*` は公開認証なしにしない。Cloud Scheduler/TasksのOIDC認証やサービス間IAMを使用する。
+# 06 現行処理フロー
 
 ## Webhook受信
+
 ```text
-LINE event
-  -> x-line-signature検証（raw body）
-  -> event type / groupId / text確認
-  -> messageIdで重複排除
-  -> DB保存
-  -> Cloud Tasksへ解析依頼
-  -> 200 OK
+LINE signed POST
+  -> Workerがraw bodyで署名検証
+  -> 署名済み本文をGASへ転送
+  -> GASがURL token・group ID・text eventを確認
+  -> Message IDをLockService内で重複確認
+  -> Messagesへ保存
+  -> WorkerがGAS最終本文OKを確認してLINEへ200
 ```
 
-## AI解析
-```text
-未解析メッセージ + 既存の決定/タスク/課題
-  -> AIに構造化抽出依頼
-  -> JSON schema validation
-  -> evidence ID存在確認
-  -> 既存データと突合
-  -> PENDING候補として保存
-  -> sync job登録
-```
+個人トーク、固定外グループ、画像・音声・ファイルは保存しない。
 
-## 週次レポート
-```text
-Scheduler
-  -> report_runの一意ロック
-  -> 対象期間のDBスナップショット
-  -> AIによる差分要約（事実照合）
-  -> 年/月フォルダをensure
-  -> Google DriveへMarkdown作成
-  -> 常設Docs/Sheets同期
-  -> URL取得・権限確認
-  -> LINE Push通知
-  -> report_run完了
-```
+## 5分処理
 
-## メンション例
-- Botを文頭メンションして`残課題`：未解決課題を表示。
-- `決定事項`：確定済み決定のみ表示。
-- `進行方針`：承認済みで現在有効な方針を表示。
-- `確認待ち`：承認待ち候補の一覧。
-- `承認 I-123` / `却下 I-123`：権限を持つ人が候補を処理。
-- `整理して` / `3日分整理して`：統括提案付きの整理とMarkdown URLを投稿。
-- 任意文：直近12時間と継続管理事項を背景に統括回答。
-- `今週`：最新週次Markdownへのリンク。
+1. `NEW`または明示的に再解析指定されたメッセージを最大20件取得する。
+2. 雑談だけならAIを呼ばず`RECORDED`にする。
+3. 対象発言をClaude/OpenAIへ送り、決定・進行方針・タスク・課題候補を抽出する。
+4. スキーマ、根拠Message ID、完全一致引用を検証する。
+5. 候補を`PENDING`で保存し、閲覧用シートと現況書を更新する。
+6. 期間整理・統括相談、通知再試行、週次の失敗・欠測回復を処理する。
 
-## リポジトリ構成（案）
-```text
-src/
-  app.ts
-  adapters/line/
-  adapters/google-drive/
-  adapters/openai/
-  domain/decisions/
-  domain/tasks/
-  domain/issues/
-  services/analyze/
-  services/reports/
-  services/sync/
-  jobs/
-  db/
-prisma/schema.prisma
-tests/
-docs/
-```
+## メンション依頼
+
+- `整理して`：直近12時間。
+- `3日分整理して` / `直近3日分まとめて`：指定した1〜31日。
+- 任意文：直近12時間と継続中の管理事項を背景に統括回答。
+
+AI結果を`SummaryRequests`へ保存してから日次Markdownを作り、LINEへ要約とURLをPushする。Drive・LINE失敗時は保存済みAI結果を再利用する。
+
+## 週次
+
+日曜20時JSTを締切に、未報告発言と継続中の管理事項を整理する。対象Message IDとAI結果を`Reports`へ保存してから週次Markdownを作り、LINEへ要約とURLをPushする。GAS強制終了、日曜トリガー欠測、Drive・LINE一時失敗は5分処理が回復する。
+
+## 即時コマンド
+
+`状態`、`使い方`、`まとめ`、`決定事項`、`進行方針`、`残課題`、`確認待ち`、`今週`、管理者用の`承認 <ID>`・`却下 <ID>`はBotを文頭でメンションして使う。

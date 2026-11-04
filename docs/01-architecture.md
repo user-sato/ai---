@@ -1,34 +1,38 @@
-# 01 システム概要
+# 01 現行システム構成
 
 ## 全体構成
+
 ```text
-LINE Group -> LINE Messaging API -> Webhook (Cloud Run)
-                                    -> PostgreSQL (message inbox)
-                                    -> Cloud Tasks -> AI extraction (OpenAI API)
-                                                   -> decisions/tasks/issues DB
-                                                   -> Google Drive sync jobs
-Cloud Scheduler -> daily reconciliation / weekly report / monthly rollover
-Google Drive API + Docs API + Sheets API <- sync worker
-LINE Push API <- report notification worker
+LINE Group
+  -> Cloudflare Worker
+       - raw bodyでLINE署名検証
+       - GASへ署名済み本文を転送
+  -> GAS Web App
+       - URL tokenと固定group IDを確認
+       - Google Sheetsへ重複排除して保存
+       - 5分トリガーでClaude/OpenAI解析
+       - Google Docs現況書、Drive Markdownを生成
+       - LINEへ返信・Push通知
 ```
 
 ## コンポーネント
-| 項目 | 候補 | 役割 |
+
+| 項目 | 採用 | 役割 |
 |---|---|---|
-| 言語 | TypeScript / Node.js | 全体実装 |
-| Web | Fastify | Webhook / 管理エンドポイント |
-| LINE | Messaging API / @line/bot-sdk | 受信・返信・Push |
-| AI | OpenAI API（構造化出力） | 抽出、差分要約、回答 |
-| DB | PostgreSQL（Cloud SQL候補） | 唯一の業務データ正本 |
-| ORM | Prisma | スキーマ・マイグレーション |
-| ジョブ | Cloud Tasks | 非同期処理・リトライ |
-| 定期 | Cloud Scheduler | 日次・週次・月次 |
-| 文書 | Drive/Docs/Sheets API | 人間向け表示 |
+| Webhook入口 | Cloudflare Worker | LINE署名検証、GASの302追跡、最終`OK`確認 |
+| アプリ | Google Apps Script | Webhook処理、時間トリガー、AI・Google・LINE連携 |
+| 正本 | Googleスプレッドシート | メッセージ、管理事項、週次、メンション依頼の状態管理 |
+| AI | Claude APIまたはOpenAI API | 候補抽出、期間整理、統括提案 |
+| 出力 | Google Docs / Drive Markdown | 常設現況書、日次・週次レポート |
+| 通知 | LINE Messaging API | コマンド返信、整理結果、週次URLの投稿 |
+
+PostgreSQL、Cloud Run、Cloud Tasks、Cloud Schedulerは現行MVPでは使わない。
 
 ## 境界と原則
-1. Webhookでは署名検証・重複排除・永続化を行い速やかに2xx。AI呼び出しは非同期。
-2. 新着WebhookはBot加入後のイベントのみ。過去LINE履歴の自動遡及取得は想定しない。
-3. 会話がない場合はAI解析をスキップする。
-4. AIの出力は候補。根拠と確信度を保存し、確定・担当者割当は人間の確認を原則とする。
-5. LINEは通知・簡易操作、Driveは閲覧、DBは正本。Google側編集の逆同期はMVP対象外。
-6. 1グループ・1プロジェクトから開始。将来は複数グループ対応可能なID設計にする。
+
+1. Workerで署名検証後、GASは対象の1グループだけを処理する。
+2. Webhookはメッセージ保存までを行い、AI処理は5分トリガーへ分離する。
+3. Message IDと`LockService`で再送・同時受信の重複を抑止する。
+4. AI出力は根拠付き候補であり、人の承認まで決定・進行方針・タスクを確定しない。
+5. Google Sheetsを正本とし、Docs・Markdownは出力として扱う。
+6. APIキーはGAS Script Properties、Worker Secretへ保存し、ソースやシートへ書かない。

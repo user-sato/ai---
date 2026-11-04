@@ -54,11 +54,11 @@ Worker Secretに置く値は次の2つだけでよい。
 - `LINE_CHANNEL_SECRET`
 - `GAS_WEBHOOK_URL`
 
-LINE Push、OpenAI APIキー、Google Drive IDは引き続きGASのScript Propertiesに置く。Workerにコピーしない。
+LINE Push、Claude/OpenAI APIキー、Google Drive IDは引き続きGASのScript Propertiesに置く。Workerにコピーしない。
 
 ## 費用と制限
 
-Cloudflareの公式ドキュメント上、Workers Freeには1日100,000リクエスト、1リクエストあたり10ms CPU、1リクエストあたり50サブリクエストなどの制限がある。署名検証とGASへの1回の転送だけなら、通常の1グループ運用では十分小さい見込みである。ただし、プラン・上限・課金条件は変更され得るので、導入時にCloudflareダッシュボードと公式価格表を再確認する。
+署名検証とGASへの1回の転送だけなので、通常の1グループ運用ではWorkerの処理量は小さい見込みである。Workers Freeのリクエスト数、CPU時間、サブリクエスト数、課金条件は変更され得るため、導入時と運用中にCloudflareダッシュボードと公式のLimits・Pricingを確認する。固定の上限値はこの資料へ転記しない。
 
 `workers.dev`の公開URLはカスタムドメインなしで試せる。Cloudflare自身は`workers.dev`を個人・ホビー用途向けとし、業務上重要な本番ではWorkers Routeまたはカスタムドメインを推奨している。まず専用LINEテストグループで試す用途なら`workers.dev`でよい。本運用で可用性やURLの管理を重視する時にカスタムドメインを検討する。
 

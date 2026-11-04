@@ -1,6 +1,6 @@
 # LINE AI書記Bot
 
-現在のMVPは、**Google Apps Script（GAS）+ Googleスプレッドシート**です。ローカルサーバー、PostgreSQL、Cloud Runを用意せず、1つのLINEグループの会話を整理します。
+現在のMVPは、**Cloudflare Worker + Google Apps Script（GAS）+ Googleスプレッドシート**です。ローカルサーバー、PostgreSQL、Cloud Runを用意せず、1つのLINEグループの会話を整理します。
 
 ```text
 LINEグループ → Cloudflare Worker → GAS Web App → Google Sheets（正本）
@@ -40,3 +40,4 @@ GAS Web AppではLINEの`x-line-signature`ヘッダーを取得できないた�
 `src/`、`prisma/`、`infra/`以下には、先に作ったNode/PostgreSQL版が残っています。このGAS MVPでは使いません。将来、LINE署名検証や複数グループ、より確実なジョブ管理が必要になった時の移行元として保持しています。
 
 設計上の判断と未決事項は[docs/09-decisions-and-assumptions.md](docs/09-decisions-and-assumptions.md)を参照してください。
+現行資料と旧Node版資料の区分は[docs/README.md](docs/README.md)にまとめています。

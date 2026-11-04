@@ -1,5 +1,7 @@
 # 運用・障害対応
 
+> **アーカイブ:** 旧Node/PostgreSQL版の運用手順である。現行GAS MVPの運用・復旧は[`gas/README.md`](../gas/README.md)、[`gas/TESTING.md`](../gas/TESTING.md)、[`gas/REDEPLOY.md`](../gas/REDEPLOY.md)を使う。
+
 ## 監視
 
 `/healthz`はプロセスの生存確認のみで、DB/APIの疎通成功を意味しない。Cloud MonitoringでCloud Run 5xx、Tasks滞留、Scheduler失敗、DB接続/容量を監視する。加えて以下のDB集計を監視する。

@@ -1,5 +1,7 @@
 # MVP実装判断と検証計画
 
+> **アーカイブ:** 旧Node/PostgreSQL版の判断記録である。現行GAS MVPの判断は[`docs/09`](09-decisions-and-assumptions.md)、[`docs/16`](16-gas-spreadsheet-decision.md)、[`docs/17`](17-cloudflare-workers-assessment.md)を参照する。
+
 ## 設計整合性
 - 文書02/05の週次境界の差は文書09の明示的な優先方針で解決する。日曜20時JSTの速報版、前回cutoffから今回cutoffまで。初回のみ当週月曜00時。格納月は今回配信週の月曜の月。本文には連続集計の実際の期間を表示する。
 - 文書04の「月替わりに翌月」は文書05/09の毎月1日00:10に新月作成と解釈する。

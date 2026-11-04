@@ -6,14 +6,15 @@
 
 ```text
 LINE Group
+  -> Cloudflare Worker（LINE署名検証）
   -> GAS Web App
        -> Google Sheets（正本）
-       -> OpenAI API（5分ごとの候補抽出）
+       -> Claude / OpenAI API（5分ごとの候補抽出・統括）
        -> Google Docs（現況書）/ Drive Markdown（週次・日次統括）
        -> LINE（コマンド返信・週次通知）
 ```
 
-`Messages`、`Items`、`Reports`がBotの台帳です。`Tasks`、`Issues`、`Decisions`は閲覧しやすいように更新するBot管理シートです。人が直接編集しても、次回同期で上書きされます。
+`Messages`、`Items`、`Reports`、`SummaryRequests`がBotの台帳です。`Tasks`、`Issues`、`Decisions`は閲覧しやすいように更新するBot管理シートです。人が直接編集しても、次回同期で上書きされます。
 
 ## 設定手順
 
@@ -50,7 +51,7 @@ LINE Group
 https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?webhook_token=<WEBHOOK_TOKEN>
 ```
 
-9. LINE DevelopersのWebhook URLにはWorker URLを設定して有効にする。合意済みのテストグループでテキストを1件送る。`Messages`に`NEW`または`RECORDED`で入ること、数分後に必要な発言は`ANALYZED`になり`Items`へ候補が出ることを確認する。
+9. LINE DevelopersのWebhook URLにはWorker URLを設定して有効にする。`LINE_GROUP_ID`が未設定なら、次節の初回登録を先に完了する。登録後、合意済みのテストグループで通常テキストを1件送る。`Messages`に`NEW`または`RECORDED`で入ること、数分後に必要な発言は`ANALYZED`になり`Items`へ候補が出ることを確認する。登録前の通常発言は保存されない。
 
 ### Group IDが分からない初回登録
 
@@ -112,7 +113,7 @@ GAS Web Appの`doPost(e)`には、LINEが送る`x-line-signature`ヘッダーが
 - 32文字以上の推測困難な`WEBHOOK_TOKEN`をWorkerからGASへ送るURLのクエリに含める
 - `LINE_GROUP_ID`が完全一致するイベントだけ処理する
 - 未知のグループ、個人トーク、画像、空テキスト、無効トークンは記録も返信もしない
-- キーはScript Propertiesだけに保存する
+- GAS用キーはScript Properties、Worker用キーはWorker Secretだけに保存する
 - `LockService`とMessage ID照合で同時書込み・再送の重複を防ぐ
 
 group IDは秘密ではありません。URLが漏れた場合は`WEBHOOK_TOKEN`を新しいランダム値に変更し、Worker SecretのGAS URLを更新する。
@@ -137,13 +138,13 @@ LINE Messaging APIにはグループのノートへ投稿するAPIがないた�
 
 通常の発言へは返答せず、5分ごとの処理で候補化する。AIが抽出した決定・進行方針・タスクは人の承認まで確定しない。承認された進行方針は`ACTIVE`として台帳に残り、以後の整理・週次へ既存状態として渡される。担当者・期限・金額をAIが推測して書き込むこともない。
 
-週次は対象Message IDを`Reports`へ固定してから生成する。DriveやLINEの再試行中に新しい発言が届いても、保存済みAI結果へ混ぜて報告済みにしない。締切後に遅れて届いた古い未報告発言は次回週次へ含める。
+週次は対象Message IDをAI結果とともに`Reports`へ保存し、Markdown作成前に固定する。DriveやLINEの再試行中に新しい発言が届いても、保存済みAI結果へ混ぜて報告済みにしない。締切後に遅れて届いた古い未報告発言は次回週次へ含める。
 
 メンションによるAI依頼はグループ全体で1日20回、指定期間は1〜31日、AIへ渡す会話と管理事項は合計60,000文字までである。導入前に取り込んだ496件を含む`HISTORICAL`行は、通常の期間整理と週次から除外する。
 
 ## 再試行と手動復旧
 
-AIやスプレッドシート保存の一時失敗では次の5分処理で最大3回再試行する。メンション依頼と週次はAI結果を先にスプシへ保存するため、DriveやLINEの再試行でAIを再実行しない。週次・日次Markdown通知は永続retry keyで重複送信を抑止する。
+通常メッセージのAI抽出が一時失敗した場合は`NEW`へ戻し、次の5分処理で再試行する。現行実装では通常抽出の試行回数に上限を設けていない。メンション依頼と週次は一時失敗を最大3回再試行し、AI結果を先にスプシへ保存するため、DriveやLINEの再試行でAIを再実行しない。週次・日次Markdown通知は永続retry keyで重複送信を抑止する。
 
 週次生成が恒久エラーまたは3回失敗で停止した場合は、APIレスポンスや秘密を含まない固定文を対象グループへ通知する。詳細は`Reports`シートとApps Scriptの実行履歴で確認する。
 

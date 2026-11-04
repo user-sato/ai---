@@ -31,7 +31,7 @@ GAS固有のサービスはローカル実行環境から接続できないた�
 
 ## レポートと失敗回復
 
-1. `createWeeklyReport`をApps Scriptエディタから手動実行する。週次Markdownが年/月/週次レポートフォルダに作られ、成功後にLINE通知が1通だけ送られる。
+1. `createWeeklyReport`をApps Scriptエディタから手動実行する。週次Markdownが年/月/週次レポートフォルダに作られ、成功後に1回のPush APIリクエストで3個のテキストメッセージが送られる。
 2. 同じ週にもう一度実行し、Markdownと通知が増えない。
 3. 一時的にAI APIキーを無効にして`processPendingMessages`を実行する。対象が`NEW`へ戻り、キー復旧後の次回処理で候補化される。Drive更新だけを失敗させた場合は、候補を再解析せず次の5分処理で現況Docsが更新される。
 4. LINEトークンを一時的に無効にして週次を実行する。`Reports`が`READY_TO_SEND`になり、復旧後の5分処理または`retryPendingWeeklyNotifications`で同じretry keyを使って再送できる。

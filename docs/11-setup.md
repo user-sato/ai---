@@ -1,5 +1,7 @@
 # 開発環境・外部サービス設定
 
+> **アーカイブ:** 旧Node/PostgreSQL版の設定手順である。現行GAS MVPには[`gas/README.md`](../gas/README.md)を使う。
+
 ## 開発とDB
 
 READMEの手順でNode.js 22以上、PostgreSQL 16を用意。依存はpackage-lock.jsonで固定する。`npm ci`、`npm run db:generate`、`npm run db:migrate`を実行する。

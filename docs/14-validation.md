@@ -1,5 +1,7 @@
 # MVP検証記録・残課題
 
+> **アーカイブ:** 以下は旧Node/PostgreSQL版の検証記録である。現行GAS MVPのテスト仕様・結果は[`docs/18`](18-test-specification.md)と[`docs/19`](19-test-results.md)を正とする。
+
 検証日: 2026-11-04 JST。外部サービスはモック。実LINE/Google/OpenAIへの接続・本番デプロイは行っていない。
 
 ## 実行結果
