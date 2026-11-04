@@ -32,6 +32,7 @@ LINE Group
 | `OPENAI_API_KEY` | OpenAI APIキー |
 | `OPENAI_MODEL` | Structured Outputs対応モデル名 |
 | `DRIVE_ROOT_FOLDER_ID` | Bot専用Drive親フォルダID |
+| `HISTORICAL_TRANSCRIPT_FILE_ID` | 任意。導入前のLINE書き出しテキストを一度だけ取り込む場合のDriveファイルID |
 
 4. `setupProject` をApps Scriptエディタから一度実行し、Googleの権限を許可する。スプレッドシート内に必要なシートが作成される。
 5. `installTriggers` を一度実行する。5分ごとの解析と、日曜20時頃（JST）の週次処理を登録する。GASの時刻トリガーは厳密な秒単位ではなく、多少前後する。
@@ -55,6 +56,14 @@ Webhookを設定してBotを対象グループへ入れた後、そのグルー�
 ```
 
 Botはその発言のgroup IDを`LINE_GROUP_ID`としてScript Propertiesへ保存し、`LINE_ADMIN_USER_IDS`が空ならその発言者を最初の管理者にする。その後、`GROUP_ENROLLMENT_CODE`を削除する。他グループからの通常発言は保存しない。登録コードを第三者に共有しない。
+
+### 導入前のLINE履歴を取り込む
+
+対象の`.txt`をBot専用Drive親フォルダへアップロードし、URLの`/d/`と次の`/`の間にあるファイルIDを`HISTORICAL_TRANSCRIPT_FILE_ID`へ設定する。Apps Scriptエディタから`importHistoricalTranscript`を一度実行する。
+
+LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の形式）を読み取り、`Messages`へ`HIST-...`のIDで追加する。同じファイルを再実行しても、同じ発言は重複しない。履歴は通常の5分処理で候補抽出される。履歴本文は命令ではなく記録データとして扱われるため、本文中の依頼やURLをBotが実行することはない。
+
+取り込みを確認したら、`HISTORICAL_TRANSCRIPT_FILE_ID`は削除してよい。元のテキストはDriveに保管され、`Messages`には解析に必要な発言本文も残る。
 
 ## claspを使う場合
 

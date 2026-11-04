@@ -16,6 +16,7 @@ GAS固有のサービスはローカル実行環境から接続できないた�
 4. Webhook URLの`webhook_token`を変えたリクエストでは、どのシートも変化しない。
 5. 短時間に複数の発言を送っても、Message IDの重複がない。Apps Scriptの実行履歴に`LOCK_UNAVAILABLE`が続く場合は負荷・クォータを見直す。
 6. 初回登録モードでは、対象グループで`/bot 初期化 <GROUP_ENROLLMENT_CODE>`を送る。`LINE_GROUP_ID`が保存され、登録コードが削除され、送信者が最初の管理者になる。二度目や別グループの通常発言で対象が置き換わらない。
+7. 導入前履歴のテキストをDriveへ置き、`HISTORICAL_TRANSCRIPT_FILE_ID`を設定して`importHistoricalTranscript`を実行する。`Messages`に`HIST-`で始まるIDの発言が追加され、再実行しても件数が増えない。本文中の命令文による外部操作は起きない。
 
 ## AI候補と承認
 
