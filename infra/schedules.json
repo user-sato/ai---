@@ -1,0 +1,28 @@
+[
+  { "name": "dispatch", "schedule": "* * * * *", "path": "dispatch", "timeZone": "Asia/Tokyo" },
+  { "name": "analysis", "schedule": "*/5 * * * *", "path": "analyze", "timeZone": "Asia/Tokyo" },
+  {
+    "name": "daily-reconcile",
+    "schedule": "0 23 * * *",
+    "path": "daily-reconcile",
+    "timeZone": "Asia/Tokyo"
+  },
+  {
+    "name": "weekly-report",
+    "schedule": "0 20 * * 0",
+    "path": "weekly-report",
+    "timeZone": "Asia/Tokyo"
+  },
+  {
+    "name": "monthly-rollover",
+    "schedule": "10 0 1 * *",
+    "path": "monthly-rollover",
+    "timeZone": "Asia/Tokyo"
+  },
+  {
+    "name": "monthly-report",
+    "schedule": "0 9 1 * *",
+    "path": "monthly-report",
+    "timeZone": "Asia/Tokyo"
+  }
+]

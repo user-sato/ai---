@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id        String   @id
+  name      String
+  groupId   String   @unique
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id             String     @id
+  eventId        String     @unique
+  projectId      String
+  userId         String?
+  body           String
+  sentAt         DateTime
+  receivedAt     DateTime   @default(now())
+  evidence       Evidence[]
+  weeklyReportId String?
+  analyzedAt     DateTime?
+  withdrawn      Boolean    @default(false)
+  command        Boolean    @default(false)
+
+  @@index([projectId, analyzedAt, sentAt])
+}
+
+model EventReceipt {
+  id         String   @id
+  receivedAt DateTime @default(now())
+}
+
+model AnalysisBatch {
+  id            String   @id @default(uuid())
+  projectId     String
+  messageIds    String[]
+  model         String
+  promptVersion String
+  createdAt     DateTime @default(now())
+}
+
+model Item {
+  id             String     @id @default(uuid())
+  projectId      String
+  kind           String
+  title          String
+  detail         String
+  status         String
+  fingerprint    String
+  assigneeUserId String?
+  dueAt          DateTime?
+  confirmedAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  version        Int        @default(1)
+  evidence       Evidence[]
+
+  @@unique([projectId, kind, fingerprint])
+  @@index([projectId, kind, status])
+}
+
+model Evidence {
+  id        String  @id @default(uuid())
+  itemId    String
+  item      Item    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  messageId String
+  source    Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  quote     String
+
+  @@unique([itemId, messageId, quote])
+  @@index([messageId])
+}
+
+model Folder {
+  id        String @id @default(uuid())
+  projectId String
+  key       String
+  googleId  String
+
+  @@unique([projectId, key])
+}
+
+model Document {
+  id        String    @id @default(uuid())
+  projectId String
+  key       String
+  googleId  String
+  url       String
+  hash      String    @default("")
+  revision  Int       @default(0)
+  syncedAt  DateTime?
+
+  @@unique([projectId, key])
+}
+
+model Job {
+  id          String    @id @default(uuid())
+  projectId   String
+  key         String    @unique
+  type        String
+  payload     Json
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  nextAt      DateTime  @default(now())
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([status, nextAt])
+}
+
+model Report {
+  id          String   @id @default(uuid())
+  projectId   String
+  type        String
+  periodStart DateTime
+  periodEnd   DateTime
+  cutoffAt    DateTime
+  folderMonth String
+  status      String   @default("PENDING")
+  documentUrl String?
+  snapshot    Json?
+  createdAt   DateTime @default(now())
+
+  @@unique([projectId, type, periodStart, periodEnd])
+}
+
+model Notification {
+  id             String    @id @default(uuid())
+  projectId      String
+  key            String    @unique
+  text           String
+  retryKey       String    @unique @default(uuid())
+  status         String    @default("PENDING")
+  firstAttemptAt DateTime?
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
+}
+
+model Audit {
+  id        String   @id @default(uuid())
+  projectId String
+  actor     String
+  action    String
+  targetId  String
+  metadata  Json
+  createdAt DateTime @default(now())
+}
