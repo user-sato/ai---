@@ -51,6 +51,10 @@ function gasFunctions(): any {
       ' globalThis.__isSummarySourceRow = isSummarySourceRow_;' +
       ' globalThis.__selectSummarySourceRows = selectSummarySourceRows_;' +
       ' globalThis.__executiveInput = executiveInput_;' +
+      ' globalThis.__messageFromRow = messageFromRow_;' +
+      ' globalThis.__replaceNames = replaceNames_;' +
+      ' globalThis.__parseSpeakerAliases = parseSpeakerAliases_;' +
+      ' globalThis.__speakerAliases = speakerAliases_;' +
       ' globalThis.__executiveInstruction = executiveInstruction_;' +
       ' globalThis.__isWeeklySourceRow = isWeeklySourceRow_;' +
       ' globalThis.__approvedStatusForKind = approvedStatusForKind_;' +
@@ -612,5 +616,54 @@ describe('GAS sheet value safety', () => {
       previous = index;
     });
     expect(instruction).toContain('担当者・期限・金額を推測しない');
+  });
+
+  it('replaces configured names in one pass and only in string values', () => {
+    const gas = gasFunctions();
+    const aliases = gas.__parseSpeakerAliases('佐藤=s藤,藤=f,M=x');
+    expect(gas.__replaceNames('佐藤と藤', aliases)).toBe('s藤とf');
+    const json = gas.__executiveInput(
+      [{ id: 'M-1', sentAt: '2026-11-04T00:00:00.000Z', body: 'M案', sender: '' }],
+      'M',
+      new Date('2026-11-01T00:00:00.000Z'),
+      new Date('2026-11-05T00:00:00.000Z'),
+      { approvedItems: [{ id: 'I-M1', title: '佐藤の案', status: 'CONFIRMED' }] },
+      { speakerAliases: '佐藤=s藤,藤=f,M=x' },
+    );
+    const input = JSON.parse(json);
+    expect(input.messages[0].messageId).toBe('M-1');
+    expect(input.messages[0].text).toBe('x案');
+    expect(input.userPrompt).toBe('x');
+    expect(input.managementItems.approvedItems[0]).toEqual({
+      id: 'I-M1',
+      title: 's藤の案',
+      status: 'CONFIRMED',
+    });
+  });
+
+  it('does not merge different people on ambiguous partial matches', () => {
+    const gas = gasFunctions();
+    const aliases = gas.__parseSpeakerAliases('佐藤=s藤,近藤=k藤,佐藤 近藤=sk');
+    const speakers = gas.__speakerAliases(
+      [
+        { sender: 'historical:佐藤 近藤' },
+        { sender: 'historical:佐藤 花子' },
+        { sender: 'historical:佐藤近藤' },
+      ],
+      aliases,
+    );
+    expect(speakers.get('historical:佐藤 近藤')).toBe('sk');
+    expect(speakers.get('historical:佐藤 花子')).toBe('s藤');
+    expect(speakers.get('historical:佐藤近藤')).toBe('参加者A');
+  });
+
+  it('maps weekly and period rows with the sender column', () => {
+    const gas = gasFunctions();
+    expect(gas.__messageFromRow({ values: ['M-1', '', 'Uabc', '2026-11-04', '本文'] })).toEqual({
+      id: 'M-1',
+      sentAt: '2026-11-04',
+      body: '本文',
+      sender: 'Uabc',
+    });
   });
 });

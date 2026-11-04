@@ -475,11 +475,7 @@ function createWeeklyReportForWindow_(window, config) {
     }
 
     if (!hasPersistedAiResult_(markdown, chatReply)) {
-      const sourceMessages = snapshot.messages.map((message) => ({
-        id: String(message.values[0]),
-        sentAt: String(message.values[3]),
-        body: String(message.values[4]),
-      }));
+      const sourceMessages = snapshot.messages.map(messageFromRow_);
       const weeklyPrompt =
         '週次レポートとして整理し、統括ならどうするかを提案してください。対象開始より前の発言がある場合は、遅延到着した未報告発言として整理してください。';
       validateSummaryInput_(
@@ -875,13 +871,20 @@ function retryCountersAfterFailure_(transition) {
 
 function summarySourceMessages_(start, end) {
   return withLock_(function () {
-    return selectSummarySourceRows_(dataRows_(sheet_(SHEETS.MESSAGES)), start, end).map((row) => ({
-      id: String(row.values[0]),
-      sentAt: String(row.values[3]),
-      body: String(row.values[4]),
-      sender: String(row.values[2] || ''),
-    }));
+    return selectSummarySourceRows_(dataRows_(sheet_(SHEETS.MESSAGES)), start, end).map(
+      messageFromRow_,
+    );
   });
+}
+
+// Messagesシートの行を、整理・統括の入力に使う発言へ変換する。週次と期間整理で共通。
+function messageFromRow_(row) {
+  return {
+    id: String(row.values[0]),
+    sentAt: String(row.values[3]),
+    body: String(row.values[4]),
+    sender: String(row.values[2] || ''),
+  };
 }
 
 // 期間整理の対象行を選ぶ。導入前に取り込んだ履歴（HISTORICAL）も含める。
@@ -1285,23 +1288,37 @@ function validateExecutiveResult_(result) {
 function executiveInput_(messages, userPrompt, start, end, managementItems, config) {
   const nameAliases = parseSpeakerAliases_(config?.speakerAliases);
   const speakers = speakerAliases_(messages, nameAliases);
-  // 本文・依頼文・管理事項に出てくる名前も、AIへ渡す前に同じ表記へ置き換える。
-  return replaceNames_(
-    JSON.stringify({
-      timezone: TZ,
-      projectContext: config?.projectContext || '',
-      userPrompt: userPrompt,
-      period: { start: jstLabel_(start), end: jstLabel_(end) },
-      managementItems: managementItems || [],
-      messages: messages.map((m) => ({
-        messageId: m.id,
-        sentAt: jstLabel_(new Date(m.sentAt)),
-        speaker: speakers.get(m.sender || '') || '不明',
-        text: m.body,
-      })),
-    }),
-    nameAliases,
-  );
+  // 本文・依頼文・背景・管理事項に出てくる登録名も、AIへ渡す前に同じ表記へ置き換える。
+  // JSONのキーやmessageIdを壊さないよう、文字列の値にだけ適用する。
+  const rename = (value) => replaceNames_(value, nameAliases);
+  return JSON.stringify({
+    timezone: TZ,
+    projectContext: rename(config?.projectContext || ''),
+    userPrompt: rename(userPrompt),
+    period: { start: jstLabel_(start), end: jstLabel_(end) },
+    managementItems: renameStrings_(managementItems || [], rename),
+    messages: messages.map((m) => ({
+      messageId: m.id,
+      sentAt: jstLabel_(new Date(m.sentAt)),
+      speaker: speakers.get(m.sender || '') || '不明',
+      text: rename(m.body),
+    })),
+  });
+}
+
+// 管理事項は自由記述のtitle・detailだけを置き換え、ID・種別・ステータス・根拠IDは変えない。
+function renameStrings_(value, rename) {
+  if (Array.isArray(value)) return value.map((item) => renameStrings_(item, rename));
+  if (!value || typeof value !== 'object') return value;
+  const copy = {};
+  Object.keys(value).forEach((key) => {
+    const field = value[key];
+    copy[key] =
+      (key === 'title' || key === 'detail') && typeof field === 'string'
+        ? rename(field)
+        : renameStrings_(field, rename);
+  });
+  return copy;
 }
 
 // 発言者をAIへ渡すための仮名を付ける。LINEのuserIdや履歴の表示名そのものはAIへ送らない。
@@ -1313,16 +1330,21 @@ function speakerAliases_(messages, nameAliases) {
   messages.forEach((m) => {
     const key = m.sender || '';
     if (!key || aliases.has(key)) return;
-    const name = key.replace(/^historical:/, '');
-    const mapped = (nameAliases || []).find(
-      (entry) => name === entry.from || name.includes(entry.from),
-    );
-    aliases.set(key, mapped ? mapped.to : '参加者' + aliasLetters_(anonymous++));
+    const mapped = speakerAliasFor_(key.replace(/^historical:/, ''), nameAliases || []);
+    aliases.set(key, mapped || '参加者' + aliasLetters_(anonymous++));
   });
   return aliases;
 }
 
-// 「佐藤=s藤,近藤=k藤」形式を読み、長い名前から順に置き換えられるよう並べる。
+// 完全一致を優先する。部分一致は1件だけ該当する場合に限り、複数該当なら別人の混同を避けて仮名にする。
+function speakerAliasFor_(name, nameAliases) {
+  const exact = nameAliases.find((entry) => entry.from === name);
+  if (exact) return exact.to;
+  const partial = nameAliases.filter((entry) => name.includes(entry.from));
+  return partial.length === 1 ? partial[0].to : '';
+}
+
+// 「佐藤=s藤,近藤=k藤」形式を読み、長い名前から順に一致させるよう並べる。
 function parseSpeakerAliases_(text) {
   return String(text || '')
     .split(/[,、\n]/)
@@ -1332,12 +1354,16 @@ function parseSpeakerAliases_(text) {
     .sort((left, right) => right.from.length - left.from.length);
 }
 
-// 指定された名前を置き換える。長い名前から順に処理する。
+// 登録名を1回の走査で置き換える。置換後の表記が別の登録名で再び置き換わることはない。
 function replaceNames_(text, nameAliases) {
-  return (nameAliases || []).reduce(
-    (result, entry) => result.split(entry.from).join(JSON.stringify(entry.to).slice(1, -1)),
-    String(text),
+  const source = String(text);
+  if (!nameAliases || !nameAliases.length) return source;
+  const table = new Map(nameAliases.map((entry) => [entry.from, entry.to]));
+  const pattern = new RegExp(
+    nameAliases.map((entry) => entry.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+    'g',
   );
+  return source.replace(pattern, (match) => table.get(match));
 }
 
 // 0→A、25→Z、26→AA のように仮名の記号を作る。
