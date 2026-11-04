@@ -83,6 +83,28 @@ function setupProject() {
 }
 
 /**
+ * Checks Sheets, Drive, and configuration without sending LINE messages or
+ * calling the AI provider. Run this before a real-device webhook test.
+ */
+function runPreflightCheck() {
+  const config = config_();
+  return withLock_(function () {
+    ensureSchema_();
+    const folder = DriveApp.getFolderById(config.driveRootFolderId);
+    return {
+      status: 'OK',
+      spreadsheetId: config.spreadsheetId,
+      driveFolderName: folder.getName(),
+      group: config.groupId ? 'REGISTERED' : 'WAITING_FOR_ENROLLMENT',
+      aiProvider: config.aiProvider,
+      aiAnalysisMode: config.aiAnalysisMode,
+      historicalImportMode: config.historicalImportMode,
+      messageCount: dataRows_(sheet_(SHEETS.MESSAGES)).length,
+    };
+  });
+}
+
+/**
  * Imports a LINE desktop-exported UTF-8 transcript from Drive exactly once.
  * Set HISTORICAL_TRANSCRIPT_FILE_ID first. Imported messages are queued for the
  * ordinary extraction job, but their text is always treated as untrusted data.
@@ -107,7 +129,7 @@ function importHistoricalTranscript() {
         'historical:' + message.sender,
         message.sentAt,
         message.body,
-        'NEW',
+        config.historicalImportMode === 'analyze' ? 'NEW' : 'RECORDED',
         '',
         0,
         '',
@@ -122,6 +144,22 @@ function importHistoricalTranscript() {
         (messages.length - rows.length) +
         ' already present.',
     );
+    return rows.length;
+  });
+}
+
+/** Deliberately queues a previously record-only historical import for AI analysis. */
+function queueHistoricalMessagesForAnalysis() {
+  const config = config_();
+  if (!config.historicalTranscriptFileId) throw new Error('HISTORICAL_TRANSCRIPT_FILE_ID_REQUIRED');
+  return withLock_(function () {
+    const sheet = sheet_(SHEETS.MESSAGES);
+    const rows = dataRows_(sheet).filter(
+      (row) =>
+        String(row.values[1]) === 'HISTORICAL_IMPORT:' + config.historicalTranscriptFileId &&
+        String(row.values[5]) === 'RECORDED',
+    );
+    rows.forEach((row) => sheet.getRange(row.number, 6, 1, 5).setValues([['NEW', '', 0, '', '']]));
     return rows.length;
   });
 }
@@ -154,6 +192,12 @@ function processPendingMessages() {
     const sheet = sheet_(SHEETS.MESSAGES);
     const rows = dataRows_(sheet);
     const pending = rows.filter((row) => row.values[5] === 'NEW').slice(0, 20);
+    if (pending.length && !shouldAnalyzeBatch_(pending, config)) {
+      pending.forEach((row) => {
+        sheet.getRange(row.number, 6, 1, 5).setValues([['RECORDED', '', 0, row.values[8], '']]);
+      });
+      return [];
+    }
 
     pending.forEach((row) => {
       const attempts = Number(row.values[7] || 0) + 1;
@@ -246,7 +290,11 @@ function createWeeklyReport() {
     const snapshot = withLock_(function () {
       const messages = dataRows_(sheet_(SHEETS.MESSAGES)).filter((row) => {
         const sent = new Date(String(row.values[3]));
-        return row.values[5] === 'ANALYZED' && !row.values[8] && sent < window.end;
+        return (
+          ['ANALYZED', 'RECORDED'].includes(String(row.values[5])) &&
+          !row.values[8] &&
+          sent < window.end
+        );
       });
       const items = dataRows_(sheet_(SHEETS.ITEMS)).map((row) => row.values);
       return { messages: messages, items: items };
@@ -391,7 +439,7 @@ function handleCommand_(event, config) {
   const parts = String(event.message.text).trim().split(/\s+/);
   const command = parts[1] || '';
   const itemId = parts[2] || '';
-  let reply = 'コマンド: /bot 決定事項・残課題・確認待ち・今週・承認 <ID>・却下 <ID>';
+  let reply = 'コマンド: /bot 状態・決定事項・残課題・確認待ち・今週・承認 <ID>・却下 <ID>';
 
   if (['承認', '却下'].includes(command)) {
     if (!config.adminUserIds.includes(String(event.source.userId || ''))) {
@@ -438,6 +486,18 @@ function handleCommand_(event, config) {
             .map((row) => '[' + row.values[4] + '] ' + row.values[2] + '\nID: ' + row.values[0])
             .join('\n\n')
         : '該当項目はありません。';
+    });
+  } else if (command === '状態') {
+    reply = withLock_(function () {
+      return (
+        'AI書記Botは受信可能です。\nAI: ' +
+        config.aiProvider +
+        ' / ' +
+        config.aiAnalysisMode +
+        '\n記録済み発言: ' +
+        dataRows_(sheet_(SHEETS.MESSAGES)).length +
+        '件'
+      );
     });
   } else if (command === '今週') {
     reply = withLock_(function () {
@@ -832,6 +892,17 @@ function findByColumn_(sheet, column, value) {
   return dataRows_(sheet).find((row) => String(row.values[column - 1]) === String(value));
 }
 
+/**
+ * The default avoids an AI request for batches that are only greetings or
+ * acknowledgements. It never creates decisions or tasks on its own.
+ */
+function shouldAnalyzeBatch_(rows, config) {
+  if (config.aiAnalysisMode === 'all') return true;
+  const signal =
+    /(決定|決まり|合意|方針|進め|やる|対応|お願い|依頼|担当|期限|締切|課題|問題|懸念|リスク|確認|相談|検討|次回|ミーティング|会議|MTG|打合せ|[?？])/i;
+  return rows.some((row) => signal.test(String(row.values[4] || '')));
+}
+
 function getOrCreateFolder_(parent, name) {
   const folders = parent.getFoldersByName(name);
   return folders.hasNext() ? folders.next() : parent.createFolder(name);
@@ -944,8 +1015,10 @@ function config_() {
     aiProvider: get('AI_PROVIDER') || 'openai',
     aiApiKey: get('AI_API_KEY') || get('OPENAI_API_KEY'),
     aiModel: get('AI_MODEL') || get('OPENAI_MODEL'),
+    aiAnalysisMode: get('AI_ANALYSIS_MODE') || 'signal_only',
     driveRootFolderId: get('DRIVE_ROOT_FOLDER_ID'),
     historicalTranscriptFileId: get('HISTORICAL_TRANSCRIPT_FILE_ID'),
+    historicalImportMode: get('HISTORICAL_IMPORT_MODE') || 'record_only',
     adminUserIds: get('LINE_ADMIN_USER_IDS')
       .split(',')
       .map((id) => id.trim())
@@ -963,6 +1036,10 @@ function config_() {
   });
   if (config.webhookToken.length < 32) throw new Error('WEBHOOK_TOKEN_TOO_SHORT');
   if (!['openai', 'anthropic'].includes(config.aiProvider)) throw new Error('INVALID_AI_PROVIDER');
+  if (!['signal_only', 'all'].includes(config.aiAnalysisMode))
+    throw new Error('INVALID_AI_ANALYSIS_MODE');
+  if (!['record_only', 'analyze'].includes(config.historicalImportMode))
+    throw new Error('INVALID_HISTORICAL_IMPORT_MODE');
   if (!config.groupId && config.groupEnrollmentCode.length < 16) {
     throw new Error('LINE_GROUP_ID_OR_GROUP_ENROLLMENT_CODE_REQUIRED');
   }

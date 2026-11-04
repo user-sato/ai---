@@ -32,8 +32,10 @@ LINE Group
 | `AI_PROVIDER` | `openai` または `anthropic`（Claude APIの場合はこちら） |
 | `AI_API_KEY` | 選んだAI提供元のAPIキー |
 | `AI_MODEL` | 選んだAI提供元のモデル名 |
+| `AI_ANALYSIS_MODE` | 任意。通常は`signal_only`（雑談だけのバッチはAI送信しない）。すべて解析するなら`all` |
 | `DRIVE_ROOT_FOLDER_ID` | Bot専用Drive親フォルダID |
 | `HISTORICAL_TRANSCRIPT_FILE_ID` | 任意。導入前のLINE書き出しテキストを一度だけ取り込む場合のDriveファイルID |
+| `HISTORICAL_IMPORT_MODE` | 任意。通常は`record_only`（AI送信なし）。履歴も候補抽出するなら`analyze` |
 
 4. `setupProject` をApps Scriptエディタから一度実行し、Googleの権限を許可する。スプレッドシート内に必要なシートが作成される。
 5. `installTriggers` を一度実行する。5分ごとの解析と、日曜20時頃（JST）の週次処理を登録する。GASの時刻トリガーは厳密な秒単位ではなく、多少前後する。
@@ -62,13 +64,24 @@ Botはその発言のgroup IDを`LINE_GROUP_ID`としてScript Propertiesへ保�
 
 対象の`.txt`をBot専用Drive親フォルダへアップロードし、URLの`/d/`と次の`/`の間にあるファイルIDを`HISTORICAL_TRANSCRIPT_FILE_ID`へ設定する。Apps Scriptエディタから`importHistoricalTranscript`を一度実行する。
 
-LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の形式）を読み取り、`Messages`へ`HIST-...`のIDで追加する。同じファイルを再実行しても、同じ発言は重複しない。履歴は通常の5分処理で候補抽出される。履歴本文は命令ではなく記録データとして扱われるため、本文中の依頼やURLをBotが実行することはない。
+LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の形式）を読み取り、`Messages`へ`HIST-...`のIDで追加する。同じファイルを再実行しても、同じ発言は重複しない。標準では`RECORDED`として記録するだけで、履歴全文をAIへ送らない。候補抽出も必要なら、先に`HISTORICAL_IMPORT_MODE=analyze`を設定するか、取り込み後に`queueHistoricalMessagesForAnalysis`を実行する。履歴本文は命令ではなく記録データとして扱われるため、本文中の依頼やURLをBotが実行することはない。
 
 取り込みを確認したら、`HISTORICAL_TRANSCRIPT_FILE_ID`は削除してよい。元のテキストはDriveに保管され、`Messages`には解析に必要な発言本文も残る。
 
 ### AI提供元の選択
 
 Claude APIを使う場合は、`AI_PROVIDER`を`anthropic`、`AI_API_KEY`をAnthropic Consoleで発行したキー、`AI_MODEL`を利用可能なClaudeモデル名にする。OpenAIの場合は`AI_PROVIDER`を`openai`にして同じ3プロパティへ設定する。従来の`OPENAI_API_KEY`と`OPENAI_MODEL`も互換用に読み取るが、新規設定では使わない。
+
+## AIを使う範囲
+
+| 処理 | 方法 |
+|---|---|
+| Webhook受信、対象グループ判定、重複排除、スプレッドシート記録 | GASの通常処理 |
+| `/bot`コマンド、承認・却下、台帳ビュー同期、週次の対象期間・重複防止 | GASの通常処理 |
+| 導入前履歴の保管 | GASの通常処理。標準ではAI送信しない |
+| 決定・タスク・課題の意味の抽出と根拠引用の選定 | AI API |
+
+通常は`signal_only`で、決定・依頼・課題・相談などの手掛かりがない発言のまとまりは`RECORDED`として保存し、AI APIを呼ばない。AIを使わなかった発言も週次の会話件数には含める。ルールだけで決定やタスクを確定登録することはない。
 
 ## claspを使う場合
 
@@ -111,3 +124,5 @@ group IDは秘密ではありません。URLが漏れた場合は`WEBHOOK_TOKEN`
 OpenAIやスプレッドシート保存の一時失敗ではメッセージを`NEW`に戻し、次の5分処理で再試行する。Docs更新の失敗は、保存済み候補を重複解析せず、次の5分処理で再試行する。15分以上`PROCESSING`のままなら自動回収する。週次Docs作成後のLINE通知は、同じretry keyを`Reports`に保持して`retryPendingWeeklyNotifications`で手動再試行できる。
 
 GASだけでは、LINE送信直後に実行が止まった場合の完全な到達確認まではできない。LINEのretry keyで二重送信を抑え、不明な状態はグループ投稿を人が確認してから扱う。
+
+実際のLINEグループでの接続確認は、[REAL_DEVICE_TEST.md](REAL_DEVICE_TEST.md) の順に行う。
