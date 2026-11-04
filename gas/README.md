@@ -29,8 +29,9 @@ LINE Group
 | `WEBHOOK_TOKEN` | 32文字以上のランダム文字列 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Messaging APIアクセストークン |
 | `LINE_ADMIN_USER_IDS` | 承認者のuserId。複数ならカンマ区切り |
-| `OPENAI_API_KEY` | OpenAI APIキー |
-| `OPENAI_MODEL` | Structured Outputs対応モデル名 |
+| `AI_PROVIDER` | `openai` または `anthropic`（Claude APIの場合はこちら） |
+| `AI_API_KEY` | 選んだAI提供元のAPIキー |
+| `AI_MODEL` | 選んだAI提供元のモデル名 |
 | `DRIVE_ROOT_FOLDER_ID` | Bot専用Drive親フォルダID |
 | `HISTORICAL_TRANSCRIPT_FILE_ID` | 任意。導入前のLINE書き出しテキストを一度だけ取り込む場合のDriveファイルID |
 
@@ -64,6 +65,10 @@ Botはその発言のgroup IDを`LINE_GROUP_ID`としてScript Propertiesへ保�
 LINEのテキスト書き出し形式（UTF-8、日時・送信者・本文の形式）を読み取り、`Messages`へ`HIST-...`のIDで追加する。同じファイルを再実行しても、同じ発言は重複しない。履歴は通常の5分処理で候補抽出される。履歴本文は命令ではなく記録データとして扱われるため、本文中の依頼やURLをBotが実行することはない。
 
 取り込みを確認したら、`HISTORICAL_TRANSCRIPT_FILE_ID`は削除してよい。元のテキストはDriveに保管され、`Messages`には解析に必要な発言本文も残る。
+
+### AI提供元の選択
+
+Claude APIを使う場合は、`AI_PROVIDER`を`anthropic`、`AI_API_KEY`をAnthropic Consoleで発行したキー、`AI_MODEL`を利用可能なClaudeモデル名にする。OpenAIの場合は`AI_PROVIDER`を`openai`にして同じ3プロパティへ設定する。従来の`OPENAI_API_KEY`と`OPENAI_MODEL`も互換用に読み取るが、新規設定では使わない。
 
 ## claspを使う場合
 
