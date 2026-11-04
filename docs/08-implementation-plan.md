@@ -1,5 +1,7 @@
 # 08 実装計画と受入条件
 
+> この文書のM1〜M5は旧Node/PostgreSQL案である。現行MVPはWorker + GAS + Sheetsで、実装・デプロイ手順は[`gas/README.md`](../gas/README.md)と[`gas/REDEPLOY.md`](../gas/REDEPLOY.md)を正とする。
+
 ## マイルストーン
 | 段階 | 内容 | 完了条件 |
 |---|---|---|

@@ -9,7 +9,7 @@ LINE Group
   -> GAS Web App
        -> Google Sheets（正本）
        -> OpenAI API（5分ごとの候補抽出）
-       -> Google Docs / Drive（現況書・週次）
+       -> Google Docs（現況書）/ Drive Markdown（週次・日次統括）
        -> LINE（コマンド返信・週次通知）
 ```
 
@@ -36,6 +36,9 @@ LINE Group
 | `DRIVE_ROOT_FOLDER_ID` | Bot専用Drive親フォルダID |
 | `HISTORICAL_TRANSCRIPT_FILE_ID` | 任意。導入前のLINE書き出しテキストを一度だけ取り込む場合のDriveファイルID |
 | `HISTORICAL_IMPORT_MODE` | 任意。通常は`record_only`（AI送信なし）。履歴も候補抽出するなら`analyze` |
+| `ON_DEMAND_SUMMARY_MAX_DAYS` | 任意。メンション要約の最大日数。既定は`31` |
+| `ON_DEMAND_SUMMARY_MAX_CHARACTERS` | 任意。1回の要約へ送る最大文字数。既定は`60000` |
+| `DAILY_AI_REQUEST_LIMIT` | 任意。メンションによるAI依頼の1日上限。既定は`20` |
 
 4. `setupProject` をApps Scriptエディタから一度実行し、Googleの権限を許可する。スプレッドシート内に必要なシートが作成される。
 5. `installTriggers` を一度実行する。5分ごとの解析と、日曜20時頃（JST）の週次処理を登録する。GASの時刻トリガーは厳密な秒単位ではなく、多少前後する。
@@ -56,7 +59,7 @@ https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?webhook_token=<WEBHOOK_T
 Webhookを設定してBotを対象グループへ入れた後、そのグループで次を1回だけ送る。
 
 ```text
-/bot 初期化 <GROUP_ENROLLMENT_CODE>
+@Bot 初期化 <GROUP_ENROLLMENT_CODE>
 ```
 
 Botはその発言のgroup IDを`LINE_GROUP_ID`としてScript Propertiesへ保存し、`LINE_ADMIN_USER_IDS`が空ならその発言者を最初の管理者にする。その後、`GROUP_ENROLLMENT_CODE`を削除する。他グループからの通常発言は保存しない。登録コードを第三者に共有しない。
@@ -80,9 +83,10 @@ Claude APIを使う場合は、`AI_PROVIDER`を`anthropic`、`AI_API_KEY`をAnth
 | 処理 | 方法 |
 |---|---|
 | Webhook受信、対象グループ判定、重複排除、スプレッドシート記録 | GASの通常処理 |
-| `/bot`コマンド、承認・却下、台帳ビュー同期、週次の対象期間・重複防止 | GASの通常処理 |
+| メンション操作、承認・却下、台帳ビュー同期、週次の対象期間・重複防止 | GASの通常処理 |
 | 導入前履歴の保管 | GASの通常処理。標準ではAI送信しない |
-| 決定・タスク・課題の意味の抽出と根拠引用の選定 | AI API |
+| 決定・進行方針・タスク・課題の意味の抽出と根拠引用の選定 | AI API |
+| `整理して`、期間整理、任意の統括相談、週次の整理・統括提案 | AI API。生成結果を保存してからDrive・LINEを処理する |
 
 通常は`signal_only`で、決定・依頼・課題・相談などの手掛かりがない発言は`RECORDED`として保存し、AI APIを呼ばない。AIを使わなかった発言も週次の会話件数には含める。`queueRecordedMessagesForAnalysis`を手動実行すれば、過去の`RECORDED`発言を後から解析できる。ルールだけで決定やタスクを確定登録することはない。
 
@@ -113,23 +117,40 @@ GAS Web Appの`doPost(e)`には、LINEが送る`x-line-signature`ヘッダーが
 
 group IDは秘密ではありません。URLが漏れた場合は`WEBHOOK_TOKEN`を新しいランダム値に変更し、Worker SecretのGAS URLを更新する。
 
-## コマンド
+## メンション操作
 
-- `/bot 決定事項` — CONFIRMEDの決定だけを返す
-- `/bot まとめ` — 保存済みの決定・確認待ち・未解決の要約を返す（AI APIを呼ばない）
-- `/bot 残課題` — OPENのタスク・課題を返す
-- `/bot 確認待ち` — PENDINGの候補を返す
-- `/bot 今週` — 最新の週次Docsリンクを返す
-- `/bot 承認 <ID>` / `/bot 却下 <ID>` — `LINE_ADMIN_USER_IDS`に登録した人だけ実行可能
+Botを文頭でメンションして、後ろに次を送る。
 
-通常の発言へは返答せず、5分ごとの処理で候補化する。AIが抽出した決定・タスクは人の承認まで確定しない。担当者・期限・金額をAIが推測して書き込むこともない。
+- `状態` — 稼働状態を返す
+- `使い方` — 使い方を返す
+- `まとめ` — 保存済みの決定・確認待ち・未解決を即時に返す（AI APIを呼ばない）
+- `整理して` — 直近12時間を整理し、統括コメント付きでLINE投稿・日次Markdown保存
+- `3日分整理して` — 指定期間を同様に整理（最大31日）
+- `直近3日分まとめて` — 上と同じ期間整理の言い換え
+- その他の任意質問 — 直近12時間の会話を背景に統括として回答し、日次Markdown保存
+- `決定事項` / `進行方針` / `残課題` / `確認待ち` / `今週`
+- `承認 <ID>` / `却下 <ID>` — `LINE_ADMIN_USER_IDS`に登録した人だけ実行可能
+
+要約Markdownのリンク先をグループ参加者も開くには、Bot専用Drive親フォルダを対象メンバーへ共有する。
+
+LINE Messaging APIにはグループのノートへ投稿するAPIがないため、週次タイトル・要約・Drive URLはグループチャットへ投稿する。
+
+通常の発言へは返答せず、5分ごとの処理で候補化する。AIが抽出した決定・進行方針・タスクは人の承認まで確定しない。承認された進行方針は`ACTIVE`として台帳に残り、以後の整理・週次へ既存状態として渡される。担当者・期限・金額をAIが推測して書き込むこともない。
+
+週次は対象Message IDを`Reports`へ固定してから生成する。DriveやLINEの再試行中に新しい発言が届いても、保存済みAI結果へ混ぜて報告済みにしない。締切後に遅れて届いた古い未報告発言は次回週次へ含める。
+
+メンションによるAI依頼はグループ全体で1日20回、指定期間は1〜31日、AIへ渡す会話と管理事項は合計60,000文字までである。導入前に取り込んだ496件を含む`HISTORICAL`行は、通常の期間整理と週次から除外する。
 
 ## 再試行と手動復旧
 
-OpenAIやスプレッドシート保存の一時失敗ではメッセージを`NEW`に戻し、次の5分処理で再試行する。Docs更新の失敗は、保存済み候補を重複解析せず、次の5分処理で再試行する。15分以上`PROCESSING`のままなら自動回収する。週次Docs作成後のLINE通知は、同じretry keyを`Reports`に保持して`retryPendingWeeklyNotifications`で手動再試行できる。
+AIやスプレッドシート保存の一時失敗では次の5分処理で最大3回再試行する。メンション依頼と週次はAI結果を先にスプシへ保存するため、DriveやLINEの再試行でAIを再実行しない。週次・日次Markdown通知は永続retry keyで重複送信を抑止する。
+
+週次生成が恒久エラーまたは3回失敗で停止した場合は、APIレスポンスや秘密を含まない固定文を対象グループへ通知する。詳細は`Reports`シートとApps Scriptの実行履歴で確認する。
 
 GASだけでは、LINE送信直後に実行が止まった場合の完全な到達確認まではできない。LINEのretry keyで二重送信を抑え、不明な状態はグループ投稿を人が確認してから扱う。
 
 実際のLINEグループでの接続確認は、[REAL_DEVICE_TEST.md](REAL_DEVICE_TEST.md) の順に行う。
 
 グループ参加者向けの操作説明は、[USER_GUIDE.md](USER_GUIDE.md) を共有する。
+
+GAS更新時は、[REDEPLOY.md](REDEPLOY.md) の手順で既存デプロイを更新する。

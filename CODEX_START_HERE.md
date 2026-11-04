@@ -3,12 +3,12 @@
 このリポジトリの `AGENTS.md`、`README.md`、`docs/01-architecture.md` 〜 `docs/09-decisions-and-assumptions.md` を読んで、LINE AI書記BotをMVPまで実装してください。
 
 ## 実装対象
-1. LINE Messaging API Webhook受信・署名検証・DB保存・重複排除
+1. Cloudflare WorkerでのLINE Webhook署名検証、GAS受信、Sheets保存・重複排除
 2. 非同期のAI構造化抽出（決定候補・タスク候補・未解決課題）と根拠紐付け
-3. `/bot` コマンドでの照会、管理者による承認・却下
+3. Botへの文頭メンションでの照会、期間整理、統括相談、管理者による承認・却下
 4. Google Driveのプロジェクト/年/月フォルダ自動作成、常設DocsとSheetsの同期
-5. 週次Docsの生成、LINEへの要約とURL投稿、月次Docs生成
-6. Cloud Run/Cloud Tasks/Cloud Scheduler用のデプロイ構成・セットアップ手順
+5. 週次Markdownの生成、LINEへの要約とURL投稿
+6. GAS時間トリガーとCloudflare Workerのデプロイ・セットアップ手順
 7. 自動テスト、dry-run、エラー時再試行、重複送信抑止、監査ログ
 
 ## 進め方

@@ -18,7 +18,7 @@ LINE
   -> GAS
        - 許可されたLINE_GROUP_IDだけを処理
        - Google Sheetsを正本として保存
-       - OpenAI解析、Google Docs、週次処理、LINEコマンド
+       - Claude/OpenAI解析、Google Docs、Drive Markdown、週次処理、LINEメンション
 ```
 
 これなら現在のGAS-only案の一番大きな欠点である「LINE署名を検証できない」を解消できる。一方で、データ保存用DBを導入する必要はない。
@@ -74,9 +74,9 @@ Cloudflare CronはUTCで動く。今回の案では週次・解析のスケジ�
 
 ## 採用判断
 
-現時点では、GAS-only版を最短試作として残しつつ、継続利用するなら**Worker + GAS + スプシ**へ移すのが最もバランスがよい。Worker/D1/KVやWorkerだけの構成は、GASの利便性を捨てるほどの課題が出てから検討する。
+**Worker + GAS + スプシ**を採用した。Worker/D1/KVやWorkerだけの構成は、GASの利便性を捨てるほどの課題が出てから検討する。
 
-この文書は検討結果であり、Cloudflareアカウント作成、Workerデプロイ、Secret設定、Webhook URL変更はまだ実行していない。
+Workerコード、テスト、設定手順は[`worker/`](../worker/)に置く。実環境のデプロイとSecret設定は運用者が行う。
 
 ## 参照した公式資料
 

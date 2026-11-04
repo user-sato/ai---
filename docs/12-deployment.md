@@ -1,5 +1,7 @@
 # Cloud Run / Cloud Tasks / Cloud Scheduler
 
+> この文書は旧Node/PostgreSQL版のCloud Run手順である。現行GAS MVPの更新には[`gas/REDEPLOY.md`](../gas/REDEPLOY.md)を使う。
+
 本書の操作は運用者が承認後に行う。開発作業ではクラウド作成・デプロイ・実LINE通知を行っていない。
 
 ## 構成・費用判断

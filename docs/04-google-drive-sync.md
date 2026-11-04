@@ -1,5 +1,7 @@
 # 04 Google Drive連携と月次フォルダ
 
+> この文書は旧Node/PostgreSQL案の詳細設計を含む。現行GAS運用の週次・日次出力はDrive上のMarkdownであり、設定は[`gas/README.md`](../gas/README.md)を正とする。
+
 ## 推奨フォルダ構成
 ```text
 LINE AI書記Bot/

@@ -6,7 +6,7 @@
 | POST | `/webhook/line` | LINEイベント受信（署名検証必須） |
 | POST | `/internal/jobs/analyze` | 未処理メッセージ解析 |
 | POST | `/internal/jobs/sync` | Docs/Sheets同期 |
-| POST | `/internal/jobs/weekly-report` | 週次Docs作成・LINE通知 |
+| GAS trigger | `createWeeklyReport` | 週次Markdown作成・LINE通知 |
 | POST | `/internal/jobs/monthly-rollover` | 月フォルダ作成 |
 | POST | `/internal/jobs/monthly-report` | 月次Docs作成 |
 | GET | `/healthz` | ヘルスチェック（機密を返さない） |
@@ -42,20 +42,22 @@ Scheduler
   -> 対象期間のDBスナップショット
   -> AIによる差分要約（事実照合）
   -> 年/月フォルダをensure
-  -> Google Docs作成/更新
+  -> Google DriveへMarkdown作成
   -> 常設Docs/Sheets同期
   -> URL取得・権限確認
   -> LINE Push通知
   -> report_run完了
 ```
 
-## コマンド例
-- `/bot 残課題`：未解決課題の概要とSheetsリンク。
-- `/bot 決定事項`：確定済み決定のみ表示。
-- `/bot 確認待ち`：承認待ち候補の一覧。
-- `/bot 承認 D-123`：権限を持つ人が候補を確定。
-- `/bot 却下 D-123`：候補を却下。
-- `/bot 今週`：最新週次Docsへのリンク。
+## メンション例
+- Botを文頭メンションして`残課題`：未解決課題を表示。
+- `決定事項`：確定済み決定のみ表示。
+- `進行方針`：承認済みで現在有効な方針を表示。
+- `確認待ち`：承認待ち候補の一覧。
+- `承認 I-123` / `却下 I-123`：権限を持つ人が候補を処理。
+- `整理して` / `3日分整理して`：統括提案付きの整理とMarkdown URLを投稿。
+- 任意文：直近12時間と継続管理事項を背景に統括回答。
+- `今週`：最新週次Markdownへのリンク。
 
 ## リポジトリ構成（案）
 ```text

@@ -62,4 +62,12 @@ describe('LINE gateway', () => {
     expect(response.status).toBe(200);
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it('rejects an invalid LINE signature without invoking GAS', async () => {
+    globalThis.fetch = vi.fn();
+    const request = await signedRequest({ events: [{ type: 'message' }] }, 'wrong-secret');
+    const response = await worker.fetch(request, environment);
+    expect(response.status).toBe(401);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });
