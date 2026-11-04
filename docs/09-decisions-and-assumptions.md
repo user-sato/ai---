@@ -16,6 +16,7 @@
 | 週次 | 日曜20時頃JST。週次MarkdownをDriveへ作りLINEチャットへURL投稿 |
 | 空週 | AIを呼ばず「新しい動きなし」のMarkdownを投稿 |
 | LINEノート | Messaging API非対応のため使わず、チャットへ投稿 |
+| 統括入力 | 発言者は仮名（`SPEAKER_ALIASES`または参加者A・B…）、日時は日本時間。`PROJECT_CONTEXT`で背景を渡す |
 | 承認 | 決定・進行方針・タスクは人の承認まで`PENDING` |
 
 ## 週次境界

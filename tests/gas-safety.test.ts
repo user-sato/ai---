@@ -50,6 +50,8 @@ function gasFunctions(): any {
       ' globalThis.__isDailyAiLimitReached = isDailyAiLimitReached_;' +
       ' globalThis.__isSummarySourceRow = isSummarySourceRow_;' +
       ' globalThis.__selectSummarySourceRows = selectSummarySourceRows_;' +
+      ' globalThis.__executiveInput = executiveInput_;' +
+      ' globalThis.__executiveInstruction = executiveInstruction_;' +
       ' globalThis.__isWeeklySourceRow = isWeeklySourceRow_;' +
       ' globalThis.__approvedStatusForKind = approvedStatusForKind_;' +
       ' globalThis.__validateExecutiveResult = validateExecutiveResult_;' +
@@ -546,5 +548,69 @@ describe('GAS sheet value safety', () => {
       }),
     ).toThrow('INVALID_AI_OUTPUT');
     expect(gas.__failureTransition('ANTHROPIC_REFUSAL', 0, 0).status).toBe('FAILED');
+  });
+
+  it('sends JST times, speaker aliases and project context without raw sender IDs', () => {
+    const gas = gasFunctions();
+    const messages = [
+      { id: 'M-1', sentAt: '2026-11-04T15:30:00.000Z', body: 'A案にしたい', sender: 'Uabc123' },
+      { id: 'HIST-1', sentAt: '2026-10-01T00:00:00.000Z', body: '賛成', sender: 'historical:山田' },
+      { id: 'M-2', sentAt: '2026-11-04T16:00:00.000Z', body: '再確認', sender: 'Uabc123' },
+      { id: 'M-3', sentAt: 'invalid', body: '不明', sender: '' },
+      {
+        id: 'HIST-2',
+        sentAt: '2026-10-02T00:00:00.000Z',
+        body: '佐藤さんに確認',
+        sender: 'historical:佐藤 太郎',
+      },
+      { id: 'M-4', sentAt: '2026-11-04T17:00:00.000Z', body: '了解', sender: 'Uk0nd0' },
+    ];
+    const json = gas.__executiveInput(
+      messages,
+      '佐藤さんの案を整理して',
+      new Date('2026-11-01T00:00:00.000Z'),
+      new Date('2026-11-05T00:00:00.000Z'),
+      { approvedItems: [], pendingCandidates: [] },
+      { projectContext: '文化祭の出し物準備', speakerAliases: '佐藤=s藤,近藤=k藤,Uk0nd0=k藤' },
+    );
+    const input = JSON.parse(json);
+    expect(json).not.toContain('Uabc123');
+    expect(json).not.toContain('山田');
+    expect(input.projectContext).toBe('文化祭の出し物準備');
+    expect(input.period.start).toBe('2026-11-01 09:00 JST');
+    expect(input.messages.map((m: any) => m.speaker)).toEqual([
+      '参加者A',
+      '参加者B',
+      '参加者A',
+      '不明',
+      's藤',
+      'k藤',
+    ]);
+    expect(input.messages[4].text).toBe('s藤さんに確認');
+    expect(input.userPrompt).toBe('s藤さんの案を整理して');
+    expect(json).not.toContain('佐藤');
+    expect(json).not.toContain('Uk0nd0');
+    expect(input.messages[0].sentAt).toBe('2026-11-05 00:30 JST');
+    expect(input.messages[3].sentAt).toBe('');
+  });
+
+  it('keeps the executive instruction aligned with the required headings', () => {
+    const gas = gasFunctions();
+    const instruction = gas.__executiveInstruction() as string;
+    const headings = [
+      '## 整理',
+      '## 決定事項',
+      '## 今後の進行方針',
+      '## 残課題',
+      '## 確認待ち候補（未確定）',
+      '## 統括ならどうするか（提案）',
+    ];
+    let previous = -1;
+    headings.forEach((heading) => {
+      const index = instruction.indexOf('\n' + heading);
+      expect(index).toBeGreaterThan(previous);
+      previous = index;
+    });
+    expect(instruction).toContain('担当者・期限・金額を推測しない');
   });
 });
