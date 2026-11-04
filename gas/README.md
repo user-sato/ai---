@@ -126,3 +126,5 @@ OpenAIやスプレッドシート保存の一時失敗ではメッセージを`N
 GASだけでは、LINE送信直後に実行が止まった場合の完全な到達確認まではできない。LINEのretry keyで二重送信を抑え、不明な状態はグループ投稿を人が確認してから扱う。
 
 実際のLINEグループでの接続確認は、[REAL_DEVICE_TEST.md](REAL_DEVICE_TEST.md) の順に行う。
+
+グループ参加者向けの操作説明は、[USER_GUIDE.md](USER_GUIDE.md) を共有する。
