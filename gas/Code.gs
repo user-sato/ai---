@@ -54,6 +54,7 @@ const HEADERS = {
   Issues: ['ID', 'Status', 'Title', 'Detail', 'Evidence Message IDs', 'Updated At (ISO)'],
   Decisions: ['ID', 'Status', 'Title', 'Detail', 'Evidence Message IDs', 'Updated At (ISO)'],
 };
+let spreadsheetCache_ = null;
 
 /** Receives LINE's POST. GAS does not expose x-line-signature: see README. */
 function doPost(e) {
@@ -129,7 +130,7 @@ function importHistoricalTranscript() {
         'HISTORICAL_IMPORT:' + config.historicalTranscriptFileId,
         'historical:' + message.sender,
         message.sentAt,
-        message.body,
+        asPlainText_(message.body),
         config.historicalImportMode === 'analyze' ? 'NEW' : 'RECORDED',
         'HISTORICAL',
         0,
@@ -455,7 +456,6 @@ function receiveEvent_(event, config) {
     return;
   }
   withLock_(function () {
-    ensureSchema_();
     const messages = sheet_(SHEETS.MESSAGES);
     if (findByColumn_(messages, 1, String(event.message.id))) return;
     messages.appendRow([
@@ -463,7 +463,7 @@ function receiveEvent_(event, config) {
       event.webhookEventId || '',
       event.source.userId || '',
       new Date(event.timestamp || Date.now()).toISOString(),
-      text,
+      asPlainText_(text),
       'NEW',
       '',
       0,
@@ -735,18 +735,18 @@ function saveExtraction_(messages, extraction) {
       ].join(' | ');
       itemsSheet
         .getRange(existing.number, 6, 1, 4)
-        .setValues([[combinedIds, combinedQuotes, existing.values[7], nowIso_()]]);
+        .setValues([[combinedIds, asPlainText_(combinedQuotes), existing.values[7], nowIso_()]]);
       itemsChanged = true;
       return;
     }
     itemsSheet.appendRow([
       'I-' + Utilities.getUuid().slice(0, 8),
       candidate.kind,
-      candidate.title,
-      candidate.detail,
+      asPlainText_(candidate.title),
+      asPlainText_(candidate.detail),
       'PENDING',
       evidenceIds,
-      quotes,
+      asPlainText_(quotes),
       nowIso_(),
       nowIso_(),
       '',
@@ -756,7 +756,7 @@ function saveExtraction_(messages, extraction) {
   messages.forEach((message) =>
     sheet_(SHEETS.MESSAGES)
       .getRange(message.row, 6, 1, 5)
-      .setValues([['ANALYZED', '', '', '', '']]),
+      .setValues([['ANALYZED', '', '', message.reportKey, '']]),
   );
   return itemsChanged;
 }
@@ -773,7 +773,14 @@ function syncViews_() {
     const values = [HEADERS[pair[1]]].concat(
       items
         .filter((item) => item[1] === kind)
-        .map((item) => [item[0], item[4], item[2], item[3], item[5], item[8]]),
+        .map((item) => [
+          item[0],
+          item[4],
+          asPlainText_(item[2]),
+          asPlainText_(item[3]),
+          item[5],
+          item[8],
+        ]),
     );
     target.clearContents();
     target.getRange(1, 1, values.length, values[0].length).setValues(values);
@@ -811,14 +818,19 @@ function syncCurrentDocument_(config) {
 }
 
 function markCurrentDocumentDirty_() {
-  PropertiesService.getScriptProperties().setProperty('CURRENT_DOC_DIRTY', '1');
+  PropertiesService.getScriptProperties().setProperty('CURRENT_DOC_DIRTY', Utilities.getUuid());
 }
 
 function syncCurrentDocumentIfDirty_(config) {
   const properties = PropertiesService.getScriptProperties();
-  if (properties.getProperty('CURRENT_DOC_DIRTY') !== '1') return;
+  const version = properties.getProperty('CURRENT_DOC_DIRTY');
+  if (!version) return;
   syncCurrentDocument_(config);
-  properties.deleteProperty('CURRENT_DOC_DIRTY');
+  withLock_(function () {
+    if (properties.getProperty('CURRENT_DOC_DIRTY') === version) {
+      properties.deleteProperty('CURRENT_DOC_DIRTY');
+    }
+  });
 }
 
 function createReportDocument_(window, snapshot, config) {
@@ -966,8 +978,12 @@ function ensureSchema_() {
 }
 
 function sheet_(name) {
-  const config = config_();
-  const book = SpreadsheetApp.openById(config.spreadsheetId);
+  if (!spreadsheetCache_) {
+    const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+    if (!spreadsheetId) throw new Error('MISSING_CONFIGURATION');
+    spreadsheetCache_ = SpreadsheetApp.openById(spreadsheetId);
+  }
+  const book = spreadsheetCache_;
   return book.getSheetByName(name) || book.insertSheet(name);
 }
 
@@ -1004,7 +1020,7 @@ function recoverStaleProcessing_() {
     if (row.values[5] === 'PROCESSING' && new Date(String(row.values[6])).getTime() < threshold) {
       sheet
         .getRange(row.number, 6, 1, 5)
-        .setValues([['NEW', '', row.values[7], '', 'STALE_PROCESSING']]);
+        .setValues([['NEW', '', row.values[7], row.values[8], 'STALE_PROCESSING']]);
     }
   });
 }
@@ -1016,7 +1032,7 @@ function weeklyWindow_(now) {
   const date = Utilities.formatDate(end, TZ, 'yyyy-MM-dd');
   const cutoff = new Date(date + 'T20:00:00+09:00');
   if (now.getTime() < cutoff.getTime()) cutoff.setTime(cutoff.getTime() - 7 * 86400000);
-  const start = new Date(cutoff.getTime() - (6 * 86400000 + 20 * 3600000));
+  const start = new Date(cutoff.getTime() - 7 * 86400000);
   return {
     key: 'weekly:' + Utilities.formatDate(cutoff, TZ, 'yyyy-MM-dd'),
     start: start,
@@ -1028,7 +1044,7 @@ function windowFromKey_(key) {
   const match = /^weekly:(\d{4}-\d{2}-\d{2})$/.exec(key);
   if (!match) return null;
   const end = new Date(match[1] + 'T20:00:00+09:00');
-  return { key: key, start: new Date(end.getTime() - (6 * 86400000 + 20 * 3600000)), end: end };
+  return { key: key, start: new Date(end.getTime() - 7 * 86400000), end: end };
 }
 
 /** Parses LINE's text-export format. System notices without a sender are skipped. */
@@ -1155,6 +1171,12 @@ function normalize_(value) {
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[\s\p{P}\p{S}]/gu, '');
+}
+
+/** Prevents a LINE message or AI field from becoming a Sheet formula. */
+function asPlainText_(value) {
+  const text = String(value ?? '');
+  return /^[=+\-@]/.test(text) ? "'" + text : text;
 }
 
 function nowIso_() {
