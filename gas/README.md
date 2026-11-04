@@ -24,7 +24,8 @@ LINE Group
 | プロパティ | 値 |
 |---|---|
 | `SPREADSHEET_ID` | URL内のスプレッドシートID |
-| `LINE_GROUP_ID` | 許可する1グループのID |
+| `LINE_GROUP_ID` | 許可する1グループのID。最初の登録フローを使う場合は空欄 |
+| `GROUP_ENROLLMENT_CODE` | Group IDが不明な初回だけ使う、16文字以上のランダム文字列 |
 | `WEBHOOK_TOKEN` | 32文字以上のランダム文字列 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Messaging APIアクセストークン |
 | `LINE_ADMIN_USER_IDS` | 承認者のuserId。複数ならカンマ区切り |
@@ -42,6 +43,18 @@ https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?webhook_token=<WEBHOOK_T
 ```
 
 8. LINE Webhookを有効にし、合意済みのテストグループでテキストを1件送る。`Messages`に`NEW`で入ること、数分後に`ANALYZED`になり`Items`へ候補が出ることを確認する。
+
+### Group IDが分からない初回登録
+
+`LINE_GROUP_ID`をあらかじめ知っている場合は、その値を設定してこの節を飛ばす。分からない場合は、`LINE_GROUP_ID`を空欄にし、代わりに16文字以上の`GROUP_ENROLLMENT_CODE`を設定する。Webhook URLの`WEBHOOK_TOKEN`と登録コードは別のランダム値にする。
+
+Webhookを設定してBotを対象グループへ入れた後、そのグループで次を1回だけ送る。
+
+```text
+/bot 初期化 <GROUP_ENROLLMENT_CODE>
+```
+
+Botはその発言のgroup IDを`LINE_GROUP_ID`としてScript Propertiesへ保存し、`LINE_ADMIN_USER_IDS`が空ならその発言者を最初の管理者にする。その後、`GROUP_ENROLLMENT_CODE`を削除する。他グループからの通常発言は保存しない。登録コードを第三者に共有しない。
 
 ## claspを使う場合
 

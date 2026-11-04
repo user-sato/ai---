@@ -288,7 +288,12 @@ function retryPendingWeeklyNotifications() {
 }
 
 function receiveEvent_(event, config) {
-  if (!event || event.source?.type !== 'group' || event.source.groupId !== config.groupId) return;
+  if (!event || event.source?.type !== 'group') return;
+  if (!config.groupId) {
+    enrollGroup_(event, config);
+    return;
+  }
+  if (event.source.groupId !== config.groupId) return;
   if (event.type !== 'message' || event.message?.type !== 'text' || !event.message.text) return;
 
   const text = String(event.message.text);
@@ -313,6 +318,29 @@ function receiveEvent_(event, config) {
       '',
     ]);
   });
+}
+
+/**
+ * One-time bootstrap for users who do not yet know LINE's group ID.
+ * It requires the webhook URL token and an enrollment code typed in the group.
+ */
+function enrollGroup_(event, config) {
+  if (event.type !== 'message' || event.message?.type !== 'text') return;
+  if (String(event.message.text).trim() !== '/bot 初期化 ' + config.groupEnrollmentCode) return;
+
+  withLock_(function () {
+    const properties = PropertiesService.getScriptProperties();
+    // Re-read under the lock so a concurrent request cannot replace the group.
+    if (properties.getProperty('LINE_GROUP_ID')) return;
+    if (properties.getProperty('GROUP_ENROLLMENT_CODE') !== config.groupEnrollmentCode) return;
+    properties.setProperty('LINE_GROUP_ID', String(event.source.groupId));
+    if (!properties.getProperty('LINE_ADMIN_USER_IDS') && event.source.userId) {
+      properties.setProperty('LINE_ADMIN_USER_IDS', String(event.source.userId));
+    }
+    properties.deleteProperty('GROUP_ENROLLMENT_CODE');
+  });
+  if (event.replyToken)
+    replyLine_(event.replyToken, 'このグループをAI書記Botの対象として登録しました。', config);
 }
 
 function handleCommand_(event, config) {
@@ -758,6 +786,7 @@ function config_() {
     spreadsheetId: get('SPREADSHEET_ID'),
     groupId: get('LINE_GROUP_ID'),
     webhookToken: get('WEBHOOK_TOKEN'),
+    groupEnrollmentCode: get('GROUP_ENROLLMENT_CODE'),
     lineChannelAccessToken: get('LINE_CHANNEL_ACCESS_TOKEN'),
     openaiApiKey: get('OPENAI_API_KEY'),
     openaiModel: get('OPENAI_MODEL'),
@@ -769,7 +798,6 @@ function config_() {
   };
   [
     'spreadsheetId',
-    'groupId',
     'webhookToken',
     'lineChannelAccessToken',
     'openaiApiKey',
@@ -779,6 +807,9 @@ function config_() {
     if (!config[key]) throw new Error('MISSING_CONFIGURATION');
   });
   if (config.webhookToken.length < 32) throw new Error('WEBHOOK_TOKEN_TOO_SHORT');
+  if (!config.groupId && config.groupEnrollmentCode.length < 16) {
+    throw new Error('LINE_GROUP_ID_OR_GROUP_ENROLLMENT_CODE_REQUIRED');
+  }
   return config;
 }
 

@@ -4,7 +4,7 @@ GAS固有のサービスはローカル実行環境から接続できないた�
 
 ## 事前確認
 
-- Script Propertiesに設定値がそろっている。`WEBHOOK_TOKEN`は32文字以上で、`LINE_GROUP_ID`は試験グループだけを指す。
+- Script Propertiesに設定値がそろっている。`WEBHOOK_TOKEN`は32文字以上で、`LINE_GROUP_ID`は試験グループだけを指す。Group ID不明なら`GROUP_ENROLLMENT_CODE`を16文字以上で設定し、初期化後に削除されることを確認する。
 - `setupProject`実行後、`Messages`、`Items`、`Reports`、`Tasks`、`Issues`、`Decisions`シートがある。
 - `installTriggers`後に5分解析・日曜週次のトリガーが各1本だけある。
 
@@ -15,6 +15,7 @@ GAS固有のサービスはローカル実行環境から接続できないた�
 3. 別グループで発言し、どのシートも変化しない。
 4. Webhook URLの`webhook_token`を変えたリクエストでは、どのシートも変化しない。
 5. 短時間に複数の発言を送っても、Message IDの重複がない。Apps Scriptの実行履歴に`LOCK_UNAVAILABLE`が続く場合は負荷・クォータを見直す。
+6. 初回登録モードでは、対象グループで`/bot 初期化 <GROUP_ENROLLMENT_CODE>`を送る。`LINE_GROUP_ID`が保存され、登録コードが削除され、送信者が最初の管理者になる。二度目や別グループの通常発言で対象が置き換わらない。
 
 ## AI候補と承認
 
