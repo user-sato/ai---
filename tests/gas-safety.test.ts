@@ -52,6 +52,7 @@ function gasFunctions(): any {
       ' globalThis.__selectSummarySourceRows = selectSummarySourceRows_;' +
       ' globalThis.__executiveInput = executiveInput_;' +
       ' globalThis.__messageFromRow = messageFromRow_;' +
+      ' globalThis.__summaryScopeLine = summaryScopeLine_;' +
       ' globalThis.__replaceNames = replaceNames_;' +
       ' globalThis.__parseSpeakerAliases = parseSpeakerAliases_;' +
       ' globalThis.__speakerAliases = speakerAliases_;' +
@@ -292,6 +293,25 @@ describe('GAS sheet value safety', () => {
     expect(functions.__parseAiRequest('直近3日分まとめて', config).hours).toBe(72);
     expect(functions.__parseAiRequest('今の進め方を考えて', config).type).toBe('EXECUTIVE_CHAT');
     expect(functions.__parseAiRequest('32日分整理して', config).error).toContain('1〜31日');
+    for (const text of [
+      '7日分の整理',
+      '直近7日分を整理して',
+      '7日分整理してください',
+      '７日分整理して',
+      '1週間分まとめて',
+    ]) {
+      const parsed = functions.__parseAiRequest(text, config);
+      expect(parsed.type).toBe('ORGANIZE');
+      expect(parsed.hours).toBe(168);
+    }
+    expect(functions.__parseAiRequest('3日間の流れで次に何をすべき？', config)).toEqual({
+      type: 'EXECUTIVE_CHAT',
+      hours: 72,
+      prompt: '3日間の流れで次に何をすべき？',
+    });
+    expect(functions.__parseAiRequest('5週間分整理して', config).error).toContain('1〜31日');
+    expect(functions.__parseAiRequest('11月4日の件を整理して', config).hours).toBe(12);
+    expect(functions.__parseAiRequest('直近7日を整理', config).hours).toBe(168);
   });
 
   it('reuses a complete persisted AI result after a later-stage retry', () => {
@@ -665,5 +685,16 @@ describe('GAS sheet value safety', () => {
       body: '本文',
       sender: 'Uabc',
     });
+  });
+
+  it('shows the actual period and message counts in the LINE reply', () => {
+    const gas = gasFunctions();
+    expect(
+      gas.__summaryScopeLine(
+        new Date('2026-10-29T03:00:00.000Z'),
+        new Date('2026-11-05T03:00:00.000Z'),
+        [{ id: 'HIST-1' }, { id: 'M-1' }, { id: 'HIST-2' }],
+      ),
+    ).toBe('対象: 2026-10-29 12:00 JST〜2026-11-05 12:00 JST／発言3件（うち導入前の履歴2件）');
   });
 });

@@ -669,16 +669,31 @@ function ensureWeeklyAutomationMarker_() {
 }
 
 function parseAiRequest_(text, config) {
-  const normalized = String(text).trim();
-  if (normalized === '整理して') return { type: 'ORGANIZE', hours: 12, prompt: normalized };
-  const match = /^(?:直近\s*)?(\d{1,3})\s*日分\s*(?:整理して|まとめて)[。！!]*$/.exec(normalized);
-  if (match) {
-    const days = Number(match[1]);
-    return days >= 1 && days <= config.onDemandSummaryMaxDays
-      ? { type: 'ORGANIZE', hours: days * 24, prompt: normalized }
-      : { error: '期間は1〜' + config.onDemandSummaryMaxDays + '日です。' };
+  // 全角数字・全角スペースなどを半角へ揃える（「７日分」「１週間」も読めるように）。
+  const prompt = String(text).trim();
+  const normalized = prompt.normalize('NFKC');
+  if (!prompt) return null;
+  if (/^(?:整理して|まとめて)[。！!]*$/.test(normalized))
+    return { type: 'ORGANIZE', hours: 12, prompt: prompt };
+  const days = requestedDays_(normalized);
+  if (days !== null) {
+    if (days < 1 || days > config.onDemandSummaryMaxDays)
+      return { error: '期間は1〜' + config.onDemandSummaryMaxDays + '日です。' };
+    // 「7日分の整理」「直近7日分を整理してください」なども期間整理とし、それ以外は指定期間を背景にした統括相談とする。
+    const type = /(整理|まとめ)/.test(normalized) ? 'ORGANIZE' : 'EXECUTIVE_CHAT';
+    return { type: type, hours: days * 24, prompt: prompt };
   }
-  return normalized ? { type: 'EXECUTIVE_CHAT', hours: 12, prompt: normalized } : null;
+  return { type: 'EXECUTIVE_CHAT', hours: 12, prompt: prompt };
+}
+
+// 依頼文から「N日」「N週間」の期間指定を読み取る。指定がなければnull。
+function requestedDays_(text) {
+  // 「11月4日」のような日付は期間とみなさない。「N日分」「N日間」「直近N日」「N週間」「N週分」だけを読む。
+  const week = /(\d{1,3})\s*週(?:間|分)/.exec(text) || /直近\s*(\d{1,3})\s*週/.exec(text);
+  if (week) return Number(week[1]) * 7;
+  const day = /(\d{1,3})\s*日(?:分|間)/.exec(text) || /直近\s*(\d{1,3})\s*日/.exec(text);
+  if (day) return Number(day[1]);
+  return null;
 }
 
 function isDailyAiLimitReached_(requestRows, requestedAt, limit) {
@@ -763,7 +778,7 @@ function processPendingSummaryRequests_(config) {
         managementItems,
       );
       markdown = generated.markdown;
-      chatReply = generated.chatReply;
+      chatReply = summaryScopeLine_(start, end, messages) + '\n\n' + generated.chatReply;
       withLock_(function () {
         const sheet = sheet_(SHEETS.SUMMARY_REQUESTS);
         sheet.getRange(request.row, 3).setValue('AI_DONE');
@@ -831,6 +846,22 @@ function retryPendingSummaryNotifications_(config) {
       });
     }
   });
+}
+
+// 実際にAIへ渡した期間と件数をLINE返信の先頭に示し、依頼との食い違いに気づけるようにする。
+function summaryScopeLine_(start, end, messages) {
+  const historical = messages.filter((m) => String(m.id).startsWith('HIST-')).length;
+  return (
+    '対象: ' +
+    jstLabel_(start) +
+    '〜' +
+    jstLabel_(end) +
+    '／発言' +
+    messages.length +
+    '件（うち導入前の履歴' +
+    historical +
+    '件）'
+  );
 }
 
 function hasPersistedAiResult_(markdown, chatReply) {
