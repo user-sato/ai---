@@ -450,40 +450,51 @@ describe('GAS sheet value safety', () => {
     expect(snapshot.pendingCandidates.map((item: any) => item.id)).toEqual(['I-2']);
   });
 
-  it('requires executive output to label pending items and advice as proposals', () => {
+  it('requires the policy-summary document structure and a short chat reply', () => {
     const functions = gasFunctions();
     const valid = {
       markdown: [
-        '## 整理',
+        '# イベント企画・運営方針まとめ',
+        '- 対象期間：2026-10-29〜2026-11-05',
+        '## 1. 全体方針',
         '本文',
-        '## 決定事項',
-        'なし',
-        '## 今後の進行方針',
-        'なし',
-        '## 残課題',
-        'なし',
-        '## 確認待ち候補（未確定）',
-        'なし',
-        '## 統括ならどうするか（提案）',
-        '提案内容',
+        '## 2. 論点ごとの状況',
+        '### 2.1 昔遊び体験会',
+        '## 3. 決定・合意の状況',
+        '承認済みの決定事項：なし',
+        '会話上の合意（未承認）：文体をです・ます調へ',
+        '## 4. 直近のタスク',
+        '| 優先 | タスク | 状況 |',
+        '|---|---|---|',
+        '| 高 | チラシ修正 | 調整中 |',
+        '## 5. 今後の進め方（提案）',
+        '1. 告知内容を固める',
+        '## 6. 認識のズレ',
+        '特になし',
+        '## 7. 結論',
+        'チラシ完成が最優先',
       ].join('\n'),
-      chatReply: '統括からの提案です。',
+      chatReply: '最優先: チラシ完成\n要点: …\n詳細は資料を参照',
     };
     expect(() => functions.__validateExecutiveResult(valid)).not.toThrow();
+    const broken = (from: string, to: string) => ({
+      ...valid,
+      markdown: valid.markdown.replace(from, to),
+    });
+    expect(() => functions.__validateExecutiveResult(broken('# イベント', 'イベント'))).toThrow(
+      'INVALID_AI_OUTPUT',
+    );
     expect(() =>
-      functions.__validateExecutiveResult({
-        ...valid,
-        markdown: valid.markdown.replace('（未確定）', ''),
-      }),
+      functions.__validateExecutiveResult(broken('## 6. 認識のズレ', '引用: ## 6. 認識のズレ')),
     ).toThrow('INVALID_AI_OUTPUT');
     expect(() =>
-      functions.__validateExecutiveResult({ ...valid, chatReply: '提案' + 'a'.repeat(2500) }),
+      functions.__validateExecutiveResult(broken('| 優先 | タスク | 状況 |', '| タスク |')),
     ).toThrow('INVALID_AI_OUTPUT');
     expect(() =>
-      functions.__validateExecutiveResult({
-        ...valid,
-        markdown: valid.markdown.replace('## 整理', '引用: ## 整理'),
-      }),
+      functions.__validateExecutiveResult(broken('会話上の合意（未承認）', '会話上の合意')),
+    ).toThrow('INVALID_AI_OUTPUT');
+    expect(() =>
+      functions.__validateExecutiveResult({ ...valid, chatReply: 'a'.repeat(801) }),
     ).toThrow('INVALID_AI_OUTPUT');
   });
 
@@ -622,12 +633,13 @@ describe('GAS sheet value safety', () => {
     const gas = gasFunctions();
     const instruction = gas.__executiveInstruction() as string;
     const headings = [
-      '## 整理',
-      '## 決定事項',
-      '## 今後の進行方針',
-      '## 残課題',
-      '## 確認待ち候補（未確定）',
-      '## 統括ならどうするか（提案）',
+      '## 1. 全体方針',
+      '## 2. 論点ごとの状況',
+      '## 3. 決定・合意の状況',
+      '## 4. 直近のタスク',
+      '## 5. 今後の進め方（提案）',
+      '## 6. 認識のズレ',
+      '## 7. 結論',
     ];
     let previous = -1;
     headings.forEach((heading) => {
@@ -635,6 +647,8 @@ describe('GAS sheet value safety', () => {
       expect(index).toBeGreaterThan(previous);
       previous = index;
     });
+    expect(instruction).toContain('800文字以内');
+    expect(instruction).toContain('資料の全文や表は貼らない');
     expect(instruction).toContain('担当者・期限・金額を推測しない');
   });
 
