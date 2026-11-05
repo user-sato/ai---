@@ -1266,8 +1266,8 @@ function generateExecutiveReport_(messages, userPrompt, start, end, config, mana
       JSON.parse(response.getContentText()).choices?.[0]?.message?.content || '{}',
     );
   }
-  validateExecutiveResult_(result);
-  return { markdown: String(result.markdown), chatReply: String(result.chatReply) };
+  const markdown = validateExecutiveResult_(result);
+  return { markdown: markdown, chatReply: String(result.chatReply) };
 }
 
 function executiveInstruction_() {
@@ -1303,42 +1303,62 @@ function executiveInstruction_() {
     'pendingCandidatesは確定事項に混ぜず、未承認として扱う。既存管理事項のステータスを変更しない。',
     '',
     '# chatReply',
-    'LINEへ投稿する短い要約。800文字以内。資料の全文や表は貼らない。「最優先」1行、「要点」3〜5個の短い箇条書き、「未確定」の主な事項1〜3個を書き、最後に「詳細は資料を参照」と書く。統括の意見を書く場合は「提案」と明記する。',
+    'LINEへ投稿する短い要約。700文字以内。資料の全文や表は貼らない。「最優先」1行、「要点」3〜5個の短い箇条書き、「未確定」の主な事項1〜3個を書き、最後に「詳細は資料を参照」と書く。統括の意見を書く場合は「提案」と明記する。',
   ].join('\n');
 }
 
-const EXECUTIVE_REPORT_HEADINGS = [
-  '## 1. 全体方針',
-  '## 2. 論点ごとの状況',
-  '## 3. 決定・合意の状況',
-  '## 4. 直近のタスク',
-  '## 5. 今後の進め方（提案）',
-  '## 6. 認識のズレ',
-  '## 7. 結論',
+// 見出しは番号と主要語で判定し、表記揺れ（全角記号、空白、太字、###、括弧書きの有無）を許容する。
+const EXECUTIVE_REPORT_SECTIONS = [
+  { heading: '## 1. 全体方針', number: 1, keyword: '全体方針' },
+  { heading: '## 2. 論点ごとの状況', number: 2, keyword: '状況' },
+  { heading: '## 3. 決定・合意の状況', number: 3, keyword: '決定' },
+  { heading: '## 4. 直近のタスク', number: 4, keyword: 'タスク' },
+  { heading: '## 5. 今後の進め方（提案）', number: 5, keyword: '今後の進め方' },
+  { heading: '## 6. 認識のズレ', number: 6, keyword: '認識のズレ' },
+  { heading: '## 7. 結論', number: 7, keyword: '結論' },
 ];
-const CHAT_REPLY_MAX_CHARACTERS = 800;
+const EXECUTIVE_REPORT_HEADINGS = EXECUTIVE_REPORT_SECTIONS.map((section) => section.heading);
+// LINEでは先頭に対象範囲の行（約70文字）が付くため、AIの要約は700文字までとし、投稿全体を800文字程度に収める。
+const CHAT_REPLY_MAX_CHARACTERS = 700;
 
+function normalizedReportLine_(line) {
+  return String(line).normalize('NFKC').replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function sectionNumberOf_(line) {
+  const match = /^#{2,3} ?(\d) ?[.、:]? ?(.*)$/.exec(normalizedReportLine_(line));
+  if (!match) return 0;
+  const section = EXECUTIVE_REPORT_SECTIONS.find((entry) => entry.number === Number(match[1]));
+  return section && match[2].includes(section.keyword) ? section.number : 0;
+}
+
+// 検証に通ったMarkdownを返す。7つの節の見出しは正規の表記へ揃える。
+// 構成の不足や要約の超過はINVALID_AI_STRUCTURE（最大3回まで再生成）、本文の欠落はINVALID_AI_OUTPUT（恒久）とする。
 function validateExecutiveResult_(result) {
   if (!result?.markdown || !result?.chatReply) throw new Error('INVALID_AI_OUTPUT');
-  const markdown = String(result.markdown);
   const chatReply = String(result.chatReply);
-  const lines = markdown.split(/\r?\n/).map((line) => line.trim());
-  if (!lines.some((line) => /^# \S/.test(line))) throw new Error('INVALID_AI_OUTPUT');
-  let previous = -1;
-  EXECUTIVE_REPORT_HEADINGS.forEach((heading) => {
-    const index = lines.indexOf(heading);
-    if (index <= previous) throw new Error('INVALID_AI_OUTPUT');
-    previous = index;
+  if (chatReply.length > CHAT_REPLY_MAX_CHARACTERS) throw new Error('INVALID_AI_STRUCTURE');
+  const lines = String(result.markdown).split(/\r?\n/);
+  if (!lines.some((line) => /^# \S/.test(normalizedReportLine_(line))))
+    throw new Error('INVALID_AI_STRUCTURE');
+  const indexes = [];
+  EXECUTIVE_REPORT_SECTIONS.forEach((section) => {
+    const previous = indexes.length ? indexes[indexes.length - 1] : -1;
+    const index = lines.findIndex(
+      (line, position) => position > previous && sectionNumberOf_(line) === section.number,
+    );
+    if (index < 0) throw new Error('INVALID_AI_STRUCTURE');
+    indexes.push(index);
+    lines[index] = section.heading;
   });
-  // 決定・合意の節に、承認済みと未承認の区別が書かれていることを確認する（未承認候補を確定扱いしないため）。
-  const decisionSection = lines
-    .slice(lines.indexOf('## 3. 決定・合意の状況'), lines.indexOf('## 4. 直近のタスク'))
-    .join('\n');
-  if (!decisionSection.includes('承認済み') || !decisionSection.includes('未承認'))
-    throw new Error('INVALID_AI_OUTPUT');
-  if (!lines.some((line) => /^\|\s*優先\s*\|\s*タスク\s*\|\s*状況\s*\|$/.test(line)))
-    throw new Error('INVALID_AI_OUTPUT');
-  if (chatReply.length > CHAT_REPLY_MAX_CHARACTERS) throw new Error('INVALID_AI_OUTPUT');
+  const normalized = lines.map(normalizedReportLine_);
+  const taskSection = normalized.slice(indexes[3] + 1, indexes[4]);
+  if (!taskSection.some((line) => /^\|? ?優先(度)? ?\| ?タスク(名)? ?\| ?状況/.test(line)))
+    throw new Error('INVALID_AI_STRUCTURE');
+  // 決定・合意の節に未承認の区別が書かれていることを確認する（未承認候補を確定扱いしないため）。
+  if (!normalized.slice(indexes[2] + 1, indexes[3]).some((line) => line.includes('未承認')))
+    throw new Error('INVALID_AI_STRUCTURE');
+  return lines.join('\n');
 }
 
 function executiveInput_(messages, userPrompt, start, end, managementItems, config) {

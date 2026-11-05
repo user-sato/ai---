@@ -476,26 +476,55 @@ describe('GAS sheet value safety', () => {
       ].join('\n'),
       chatReply: '最優先: チラシ完成\n要点: …\n詳細は資料を参照',
     };
-    expect(() => functions.__validateExecutiveResult(valid)).not.toThrow();
+    expect(functions.__validateExecutiveResult(valid)).toBe(valid.markdown);
     const broken = (from: string, to: string) => ({
       ...valid,
       markdown: valid.markdown.replace(from, to),
     });
-    expect(() => functions.__validateExecutiveResult(broken('# イベント', 'イベント'))).toThrow(
+    for (const [from, to] of [
+      ['# イベント', 'イベント'],
+      ['## 6. 認識のズレ', '引用: ## 6. 認識のズレ'],
+      ['| 優先 | タスク | 状況 |', '| タスク |'],
+      ['会話上の合意（未承認）', '会話上の合意'],
+      ['## 7. 結論', '## 7. まとめ'],
+    ]) {
+      expect(() => functions.__validateExecutiveResult(broken(from, to))).toThrow(
+        'INVALID_AI_STRUCTURE',
+      );
+    }
+    expect(() =>
+      functions.__validateExecutiveResult({ ...valid, chatReply: 'a'.repeat(701) }),
+    ).toThrow('INVALID_AI_STRUCTURE');
+    expect(() => functions.__validateExecutiveResult({ ...valid, markdown: '' })).toThrow(
       'INVALID_AI_OUTPUT',
     );
-    expect(() =>
-      functions.__validateExecutiveResult(broken('## 6. 認識のズレ', '引用: ## 6. 認識のズレ')),
-    ).toThrow('INVALID_AI_OUTPUT');
-    expect(() =>
-      functions.__validateExecutiveResult(broken('| 優先 | タスク | 状況 |', '| タスク |')),
-    ).toThrow('INVALID_AI_OUTPUT');
-    expect(() =>
-      functions.__validateExecutiveResult(broken('会話上の合意（未承認）', '会話上の合意')),
-    ).toThrow('INVALID_AI_OUTPUT');
-    expect(() =>
-      functions.__validateExecutiveResult({ ...valid, chatReply: 'a'.repeat(801) }),
-    ).toThrow('INVALID_AI_OUTPUT');
+    expect(functions.__failureTransition('INVALID_AI_STRUCTURE', 0, 0).status).toBe('REQUESTED');
+  });
+
+  it('accepts heading and table variations and normalizes the section headings', () => {
+    const functions = gasFunctions();
+    const markdown = [
+      '# まとめ',
+      '## 1．全体方針',
+      '## 2.論点ごとの状況',
+      '### 2.1 昔遊び',
+      '### 3. 決定・合意の状況',
+      '決定事項（承認済）：なし',
+      '### 未承認の合意',
+      '**## 4. 直近のタスク**',
+      '優先度 | タスク | 状況 | 根拠',
+      '## ５. 今後の進め方(推奨)',
+      '## 6. 重要な認識のズレ',
+      '## 7. 結論',
+    ].join('\n');
+    const result = functions.__validateExecutiveResult({ markdown, chatReply: '要約' }).split('\n');
+    expect(result).toContain('## 1. 全体方針');
+    expect(result).toContain('## 2. 論点ごとの状況');
+    expect(result).toContain('### 2.1 昔遊び');
+    expect(result).toContain('## 3. 決定・合意の状況');
+    expect(result).toContain('## 4. 直近のタスク');
+    expect(result).toContain('## 5. 今後の進め方（提案）');
+    expect(result).toContain('## 6. 認識のズレ');
   });
 
   it('includes a cutoff-time NEW message in the weekly source', () => {
@@ -647,7 +676,7 @@ describe('GAS sheet value safety', () => {
       expect(index).toBeGreaterThan(previous);
       previous = index;
     });
-    expect(instruction).toContain('800文字以内');
+    expect(instruction).toContain('700文字以内');
     expect(instruction).toContain('資料の全文や表は貼らない');
     expect(instruction).toContain('担当者・期限・金額を推測しない');
   });
