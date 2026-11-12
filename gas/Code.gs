@@ -1286,7 +1286,8 @@ function callAiJson_(config, name, instruction, input, schema, maxTokens) {
 // 週次レポートのLINE送信が済んだ後、5分ごとの処理で1件ずつ作る。週次本体とは独立しており、
 // 失敗してもLINE通知には影響しない。SOZOSHA_GITHUB_TOKENとSOZOSHA_GITHUB_REPOが揃うまで何もしない。
 // 状態（Reportsの「Sozosha Issue Status」）: 空=未作成、CREATING=作成中、CREATED=作成済み、
-// RETRY:n=n回失敗して再試行待ち、FAILED=3回失敗。CREATINGのまま残った場合は、GitHub側に
+// RETRY:n=n回失敗して再試行待ち、FAILED=3回失敗、SKIPPED=取り込む候補なし。
+// 初めて設定を検出した時刻（SOZOSHA_ENABLED_AT）より前に締め切った週次は対象外。CREATINGのまま残った場合は、GitHub側に
 // 作成済みか分からないため自動で再作成しない（管理者がsozoshaのIssueを確認して手で直す）。
 const SOZOSHA_ISSUE_MAX_ATTEMPTS = 3;
 const SOZOSHA_KIND_TAGS = ['予定', 'ToDo', '買い物', '未決'];
@@ -1297,11 +1298,19 @@ function syncWeeklySozoshaIssues_(config) {
     throw new Error('INVALID_SOZOSHA_GITHUB_REPO');
   const target = withLock_(function () {
     ensureSchema_();
+    // 設定した時点より前に締め切った週次はIssueにしない（過去分をまとめて送らないため）。
+    const properties = PropertiesService.getScriptProperties();
+    let enabledAt = properties.getProperty('SOZOSHA_ENABLED_AT');
+    if (!enabledAt) {
+      enabledAt = nowIso_();
+      properties.setProperty('SOZOSHA_ENABLED_AT', enabledAt);
+    }
     const sheet = sheet_(SHEETS.REPORTS);
     const row = dataRows_(sheet).find(
       (candidate) =>
         String(candidate.values[1]) === 'SENT' &&
         String(candidate.values[8] || '') &&
+        new Date(String(candidate.values[4])).getTime() >= new Date(enabledAt).getTime() &&
         isSozoshaIssuePending_(String(candidate.values[14] || '')),
     );
     if (!row) return null;
@@ -1315,6 +1324,15 @@ function syncWeeklySozoshaIssues_(config) {
   try {
     if (!window) throw new Error('INVALID_REPORT_KEY');
     const lines = generateSozoshaLines_(String(target.values[8]), config);
+    if (!lines.length) {
+      // 取り込む候補がない週はIssueを作らない。
+      withLock_(function () {
+        sheet_(SHEETS.REPORTS)
+          .getRange(target.row, 15, 1, 2)
+          .setValues([['SKIPPED', '']]);
+      });
+      return;
+    }
     const issue = sozoshaIssue_(window, String(target.values[2] || ''), lines);
     response = postSozoshaIssue_(issue, config);
   } catch (error) {
@@ -1380,8 +1398,15 @@ function postSozoshaIssue_(issue, config) {
   // 5xxは作成済みの可能性があるため結果不明として扱う。4xxは作成されていないので再試行できる。
   if (code >= 500) throw new Error('GITHUB_OUTCOME_UNKNOWN');
   if (code < 200 || code >= 300) throw new Error('GITHUB_HTTP_' + code);
-  const body = JSON.parse(response.getContentText());
-  return { url: String(body.html_url || body.url || '') };
+  // 2xxならIssueは作られている可能性が高い。201とhtml_urlを確認できなければ結果不明とする。
+  let url = '';
+  try {
+    url = String(JSON.parse(response.getContentText()).html_url || '');
+  } catch (error) {
+    url = '';
+  }
+  if (code !== 201 || !/^https:\/\//.test(url)) throw new Error('GITHUB_OUTCOME_UNKNOWN');
+  return { url: url };
 }
 
 function sozoshaIssue_(window, documentUrl, lines) {
@@ -1395,7 +1420,7 @@ function sozoshaIssue_(window, documentUrl, lines) {
     '',
     '## 取り込み候補',
     '',
-    lines.length ? lines.join('\n') : '- 取り込む候補はありませんでした。',
+    lines.join('\n'),
   ]
     .filter((line, index, all) => line !== '' || all[index - 1] !== '')
     .join('\n');
@@ -1422,10 +1447,13 @@ function generateSozoshaLines_(markdown, config) {
     8000,
   );
   if (!result || !Array.isArray(result.lines)) throw new Error('INVALID_AI_OUTPUT');
-  return result.lines
-    .map((line) => String(line).trim())
-    .filter((line) => isValidSozoshaLine_(line, config.sozoshaMemberTags))
-    .slice(0, 60);
+  return (
+    result.lines
+      // GitHubで@ユーザー名の通知が飛ばないよう全角に置き換える。
+      .map((line) => String(line).trim().replace(/@/g, '＠'))
+      .filter((line) => isValidSozoshaLine_(line, config.sozoshaMemberTags))
+      .slice(0, 60)
+  );
 }
 
 function sozoshaLinesInstruction_(memberTags) {

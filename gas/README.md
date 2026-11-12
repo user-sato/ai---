@@ -157,8 +157,9 @@ LINE Messaging APIにはグループのノートへ投稿するAPIがないた�
 
 - 行はすべて`#未決`付き。担当タグは会話で本人が明言した場合だけ。`#予定`は日付必須。書き方に合わない行は捨てる。
 - LINEの原文は入れず、整理した行と根拠の発言IDだけを入れる。
-- 状態は`Reports`の「Sozosha Issue Status」に記録する（空=未作成、`CREATING`、`CREATED`、`RETRY:n`、`FAILED`）。AI・検証・GitHubの4xxは最大3回再試行する。
-- GitHubへの通信が例外になった場合と5xxの場合は、作成済みか分からないため`CREATING`のまま止め、自動で作り直さない。管理者がsozoshaのIssueを確認し、作成済みならURLを「Sozosha Issue」へ、未作成なら状態を空にして再試行させる。
+- 設定を初めて検出した時刻を`SOZOSHA_ENABLED_AT`（Script Property、自動で記録）に残し、それより前に締め切った週次はIssueにしない（過去分をまとめて送らない）。取り込む候補が0件の週はIssueを作らず`SKIPPED`にする。行の`@`は通知を避けるため全角`＠`に置き換える。
+- 状態は`Reports`の「Sozosha Issue Status」に記録する（空=未作成、`CREATING`、`CREATED`、`RETRY:n`、`FAILED`、`SKIPPED`）。AI・検証・GitHubの4xxは最大3回再試行する。
+- GitHubへの通信が例外になった場合、5xxの場合、2xxでも201とIssue URLを確認できない場合は、作成済みか分からないため`CREATING`のまま止め、自動で作り直さない。管理者がsozoshaのIssueを確認し、作成済みならURLを「Sozosha Issue」へ、未作成なら状態を空にして再試行させる。
 
 ## 再試行と手動復旧
 

@@ -766,7 +766,8 @@ describe('GAS sheet value safety', () => {
     expect(h.fetches[0].url).toBe('https://api.github.com/repos/developerKondo/sozosha/issues');
     const issue = JSON.parse(h.fetches[0].options.payload);
     expect(issue.title).toContain('[書記Bot] 週次');
-    expect(issue.body).toContain('- 届出を調べる #未決 #ToDo #近藤');
+    expect(issue.body).toContain('- 届出を調べる ＠someone #未決 #ToDo #近藤');
+    expect(issue.body).not.toContain('@');
     expect(issue.body).not.toContain('#決定');
     expect(h.row.slice(13, 16)).toEqual(['https://github.com/x/1', 'CREATED', '']);
     h.run();
@@ -788,14 +789,47 @@ describe('GAS sheet value safety', () => {
   });
 });
 
-function sozoshaHarness(options: { status?: number; throwOnFetch?: boolean } = {}) {
+describe('sozosha weekly issue safety', () => {
+  it('does not backfill weeks that closed before the feature was enabled', () => {
+    const h = sozoshaHarness({ periodEnd: '2026-11-08T11:00:00.000Z' });
+    h.run();
+    expect(h.fetches).toHaveLength(0);
+    expect(h.row[14]).toBe('');
+  });
+
+  it('treats a 2xx without a parsable issue URL as an unknown outcome', () => {
+    const h = sozoshaHarness({ body: 'not json' });
+    expect(() => h.run()).toThrow('GITHUB_OUTCOME_UNKNOWN');
+    expect(h.row[14]).toBe('CREATING');
+    h.run();
+    expect(h.fetches).toHaveLength(1);
+  });
+
+  it('skips weeks with no importable lines without calling GitHub', () => {
+    const h = sozoshaHarness({ lines: ['- 決まった #決定'] });
+    h.run();
+    expect(h.fetches).toHaveLength(0);
+    expect(h.row[14]).toBe('SKIPPED');
+  });
+});
+
+function sozoshaHarness(
+  options: {
+    status?: number;
+    throwOnFetch?: boolean;
+    body?: string;
+    periodEnd?: string;
+    lines?: string[];
+  } = {},
+) {
+  const properties: Record<string, string> = { SOZOSHA_ENABLED_AT: '2026-11-10T00:00:00.000Z' };
   const source = readFileSync(new URL('../gas/Code.gs', import.meta.url), 'utf8');
   const row: unknown[] = [
     'weekly:2026-11-15',
     'SENT',
     'https://drive.example/weekly',
     '',
-    '',
+    options.periodEnd || '2026-11-15T11:00:00.000Z',
     '',
     '',
     '',
@@ -812,13 +846,23 @@ function sozoshaHarness(options: { status?: number; throwOnFetch?: boolean } = {
   const context: Record<string, any> = {
     Utilities: { formatDate: (date: Date) => date.toISOString().slice(0, 10) },
     console: { log: () => undefined },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (key: string) => properties[key] || null,
+        setProperty: (key: string, value: string) => {
+          properties[key] = value;
+        },
+      }),
+    },
+    __lines: options.lines ?? ['- 届出を調べる @someone #未決 #ToDo #近藤', '- 決まった #決定'],
     UrlFetchApp: {
       fetch: (url: string, fetchOptions: unknown) => {
         fetches.push({ url, options: fetchOptions });
         if (options.throwOnFetch) throw new Error('timeout');
         return {
           getResponseCode: () => options.status || 201,
-          getContentText: () => JSON.stringify({ html_url: 'https://github.com/x/1' }),
+          getContentText: () =>
+            options.body ?? JSON.stringify({ html_url: 'https://github.com/x/1' }),
         };
       },
     },
@@ -835,7 +879,7 @@ sheet_ = () => ({
   }),
 });
 dataRows_ = () => [{ number: 2, values: globalThis.__row.slice() }];
-callAiJson_ = () => ({ lines: ['- 届出を調べる #未決 #ToDo #近藤', '- 決まった #決定'] });
+callAiJson_ = () => ({ lines: globalThis.__lines });
 globalThis.__sync = syncWeeklySozoshaIssues_;
 globalThis.__isValidSozoshaLine = isValidSozoshaLine_;
 globalThis.__nextSozoshaIssueStatus = nextSozoshaIssueStatus_;
