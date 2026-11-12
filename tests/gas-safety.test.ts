@@ -748,7 +748,8 @@ describe('GAS sheet value safety', () => {
     const valid = gas.__isValidSozoshaLine;
     expect(valid('- 届出を調べる（根拠: M-1） #未決 #ToDo #近藤', members)).toBe(true);
     expect(valid('- 2027-01-09 さのやカフェ #未決 #予定', members)).toBe(true);
-    expect(valid('- 届出を調べる #ToDo #近藤', members)).toBe(false);
+    expect(valid('- 届出を調べる #ToDo #近藤', members)).toBe(true);
+    expect(valid('- 説明文はです・ます調にする', members)).toBe(true);
     expect(valid('- 日付のない予定 #未決 #予定', members)).toBe(false);
     expect(valid('- 決まった #未決 #決定', members)).toBe(false);
     expect(valid('- 担当違い #未決 #ToDo #山田', members)).toBe(false);

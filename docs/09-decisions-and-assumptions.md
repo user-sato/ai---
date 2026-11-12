@@ -17,7 +17,7 @@
 | 空週 | AIを呼ばず「新しい動きなし」のMarkdownを投稿 |
 | LINEノート | Messaging API非対応のため使わず、チャットへ投稿 |
 | 統括入力 | 発言者は本名（名前表`SPEAKER_ALIASES`、表にない履歴は表示名、表にないuserIdは未登録の参加者A…）、日時は日本時間。`PROJECT_CONTEXT`で背景を渡す |
-| sozosha連携 | 週次レポートだけ取り込み候補Issueを作る。判断は[`docs/20`](20-sozosha-issue-decision.md) |
+| sozosha連携 | 週次レポートだけ取り込み候補Issueを作る。合意はタグなし、論点は`#未決`、担当は文脈から読めれば付ける。判断は[`docs/20`](20-sozosha-issue-decision.md) |
 | 承認 | 決定・進行方針・タスクは人の承認まで`PENDING` |
 
 ## 週次境界
