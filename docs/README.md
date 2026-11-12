@@ -15,6 +15,7 @@
 | [`docs/09`](09-decisions-and-assumptions.md) | 確定した設計判断と未決事項 |
 | [`docs/16`](16-gas-spreadsheet-decision.md)・[`17`](17-cloudflare-workers-assessment.md) | GAS移行・Worker採用の判断記録 |
 | [`docs/18`](18-test-specification.md)・[`19`](19-test-results.md) | テスト仕様・結果 |
+| [`docs/20`](20-sozosha-issue-decision.md) | sozoshaリポジトリへの週次Issue作成の判断記録 |
 
 ## 旧Node/PostgreSQL版
 

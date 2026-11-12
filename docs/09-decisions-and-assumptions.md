@@ -16,7 +16,8 @@
 | 週次 | 日曜20時頃JST。週次MarkdownをDriveへ作りLINEチャットへURL投稿 |
 | 空週 | AIを呼ばず「新しい動きなし」のMarkdownを投稿 |
 | LINEノート | Messaging API非対応のため使わず、チャットへ投稿 |
-| 統括入力 | 発言者は仮名（`SPEAKER_ALIASES`または参加者A・B…）、日時は日本時間。`PROJECT_CONTEXT`で背景を渡す |
+| 統括入力 | 発言者は本名（名前表`SPEAKER_ALIASES`、表にない履歴は表示名、表にないuserIdは未登録の参加者A…）、日時は日本時間。`PROJECT_CONTEXT`で背景を渡す |
+| sozosha連携 | 週次レポートだけ取り込み候補Issueを作る。判断は[`docs/20`](20-sozosha-issue-decision.md) |
 | 承認 | 決定・進行方針・タスクは人の承認まで`PENDING` |
 
 ## 週次境界
@@ -37,13 +38,10 @@
 - AI・LINE・Google・Cloudflareの費用監視方法。
 - 本番相当グループへ導入する際の参加者説明と同意。
 
-## 残タスク（方針決定済み・未実装）
+## 残タスク
 
-2026-11-12 に利用者と方針を決めた。実装はまだ行わない。
+2026-11-12 に方針を決め、コードは実装済み。次が残っている。
 
-- **発言者を本名でAIへ渡す**：仮名（参加者A・B、`SPEAKER_ALIASES`の`s藤`等）をやめ、整理・統括・Issue作成のすべてで本名を使う。参加者への説明は済み（利用者確認）。現行コードは対応表にない発言者を参加者A・Bにするため、下の対応表とあわせて変更する。
-- **LINE userIdと本名の対応表を作る**：導入後の発言はuserIdで記録されるため、`userId=本名`の対応表をScript Propertiesに置く（userIdはリポジトリ・シートに書かない）。取り込み履歴の表示名も同じ表で本名へ揃える。どのuserIdが誰かは利用者から受け取る（`Messages`シートの行番号で指定してもらう形も可）。
-- **sozoshaリポジトリへIssueを直接作る**：整理結果を`developerKondo/sozosha`の書き方（行ごとの`#未決`・`#ToDo`・`#予定`、担当`#近藤` `#内藤` `#佐藤`）に寄せてIssueを1件作り、sozosha側の運用（Claudeが章へ反映し`Closes #N`のPR）に乗せる。
-  - 寄せ方：Botが出す行はすべて`#未決`を付ける（会話でまとまったものは「（会話上の合意）」と添える）。やることは`#ToDo`、予定は日付付き`#予定`。担当タグは会話で本人が明言した場合だけ付ける。LINE原文はIssueに入れず、整理した行と根拠の発言IDだけを入れる。
-  - Issueを作るのは日曜の週次レポートだけ。メンションによる`整理して`・期間整理・統括相談のレポートではIssueを作らない。週次は締切ごとに1件とし、週次キーで重複を防ぐ。
-  - 実装時に決める：GitHubトークンの発行元と最小権限（sozoshaのIssue作成のみ、Script Propertiesに保存）、週次の再試行でIssueを二重に作らない仕組み（作成済みIssue番号を`Reports`へ保存）、外部書き込みの追加に伴うADR・`docs/07`の更新。
+- **名前表の中身を設定する**：どのuserIdが誰かを利用者から受け取り、`SPEAKER_ALIASES`（`userId=本名`、`表示名=本名`）をScript Propertiesに設定する。設定までは表にないuserIdが「未登録の参加者A」…になる。
+- **GitHubトークンの発行元を決めて設定する**：近藤個人かBot用アカウントか未決。sozoshaのIssue作成だけを許すfine-grainedトークンを発行し、`SOZOSHA_GITHUB_TOKEN`と`SOZOSHA_GITHUB_REPO`を設定する。設定までは週次Issueを作らない。
+- **実機で確認する**：週次Issueの内容がsozoshaの`共有ページ/check.mjs`の書き方に合うか、sozosha側の反映運用（`Closes #N`のPR）に乗るか。

@@ -8,7 +8,7 @@ Googleスプレッドシートを正本とする。列の最終定義は[`gas/Co
 |---|---|---|
 | `Messages` | LINE Message ID | 本文、送信日時、解析状態、試行回数、週次キー |
 | `Items` | `I-...` | 決定、進行方針、タスク、課題、変更候補と根拠 |
-| `Reports` | `weekly:YYYY-MM-DD` | 週次状態、期間、Markdown URL、AI結果、LINE retry key、対象Message ID |
+| `Reports` | `weekly:YYYY-MM-DD` | 週次状態、期間、Markdown URL、AI結果、LINE retry key、対象Message ID、sozosha Issue のURL・状態・エラー |
 | `SummaryRequests` | 依頼元Message ID | 期間整理・統括相談、AI結果、日次URL、通知状態 |
 
 ## 閲覧用シート

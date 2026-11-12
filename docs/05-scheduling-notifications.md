@@ -3,7 +3,7 @@
 ## ジョブスケジュール（JST）
 | ジョブ | 実行時刻 | 動作 | LINE投稿 |
 |---|---|---|---|
-| `processPendingMessages` | 5分ごと | 未解析会話、メンション依頼、再試行、週次回復 | 整理結果・失敗通知のみ |
+| `processPendingMessages` | 5分ごと | 未解析会話、メンション依頼、再試行、週次回復、送信済み週次のsozosha Issue作成（設定時のみ） | 整理結果・失敗通知のみ |
 | `createWeeklyReport` | 毎週日曜20:00頃 | 前回締切以降のMarkdown生成、LINE要約 | あり |
 
 ## 週次レポートの期間

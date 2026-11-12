@@ -25,6 +25,7 @@ LINE Group
 | AI | Claude APIまたはOpenAI API | 候補抽出、期間整理、統括提案 |
 | 出力 | Google Docs / Drive Markdown | 常設現況書、日次・週次レポート |
 | 通知 | LINE Messaging API | コマンド返信、整理結果、週次URLの投稿 |
+| 記録連携 | GitHub Issues API（任意） | 週次レポートからsozoshaリポジトリへ取り込み候補Issueを作成 |
 
 PostgreSQL、Cloud Run、Cloud Tasks、Cloud Schedulerは現行MVPでは使わない。
 

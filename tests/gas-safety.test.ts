@@ -614,7 +614,7 @@ describe('GAS sheet value safety', () => {
     expect(gas.__failureTransition('ANTHROPIC_REFUSAL', 0, 0).status).toBe('FAILED');
   });
 
-  it('sends JST times, speaker aliases and project context without raw sender IDs', () => {
+  it('sends JST times, real speaker names and project context without raw user IDs', () => {
     const gas = gasFunctions();
     const messages = [
       { id: 'M-1', sentAt: '2026-11-04T15:30:00.000Z', body: 'A案にしたい', sender: 'Uabc123' },
@@ -635,25 +635,26 @@ describe('GAS sheet value safety', () => {
       new Date('2026-11-01T00:00:00.000Z'),
       new Date('2026-11-05T00:00:00.000Z'),
       { approvedItems: [], pendingCandidates: [] },
-      { projectContext: '文化祭の出し物準備', speakerAliases: '佐藤=s藤,近藤=k藤,Uk0nd0=k藤' },
+      {
+        projectContext: '文化祭の出し物準備',
+        speakerAliases: 'Uk0nd0=近藤,佐藤 太郎=佐藤',
+      },
     );
     const input = JSON.parse(json);
     expect(json).not.toContain('Uabc123');
-    expect(json).not.toContain('山田');
+    expect(json).not.toContain('Uk0nd0');
     expect(input.projectContext).toBe('文化祭の出し物準備');
     expect(input.period.start).toBe('2026-11-01 09:00 JST');
     expect(input.messages.map((m: any) => m.speaker)).toEqual([
-      '参加者A',
-      '参加者B',
-      '参加者A',
+      '未登録の参加者A',
+      '山田',
+      '未登録の参加者A',
       '不明',
-      's藤',
-      'k藤',
+      '佐藤',
+      '近藤',
     ]);
-    expect(input.messages[4].text).toBe('s藤さんに確認');
-    expect(input.userPrompt).toBe('s藤さんの案を整理して');
-    expect(json).not.toContain('佐藤');
-    expect(json).not.toContain('Uk0nd0');
+    expect(input.messages[4].text).toBe('佐藤さんに確認');
+    expect(input.userPrompt).toBe('佐藤さんの案を整理して');
     expect(input.messages[0].sentAt).toBe('2026-11-05 00:30 JST');
     expect(input.messages[3].sentAt).toBe('');
   });
@@ -717,7 +718,7 @@ describe('GAS sheet value safety', () => {
     );
     expect(speakers.get('historical:佐藤 近藤')).toBe('sk');
     expect(speakers.get('historical:佐藤 花子')).toBe('s藤');
-    expect(speakers.get('historical:佐藤近藤')).toBe('参加者A');
+    expect(speakers.get('historical:佐藤近藤')).toBe('佐藤近藤');
   });
 
   it('maps weekly and period rows with the sender column', () => {
@@ -740,4 +741,112 @@ describe('GAS sheet value safety', () => {
       ),
     ).toBe('対象: 2026-10-29 12:00 JST〜2026-11-05 12:00 JST／発言3件（うち導入前の履歴2件）');
   });
+
+  it('keeps only sozosha-style tag lines', () => {
+    const gas = sozoshaHarness().context;
+    const members = ['近藤', '内藤', '佐藤'];
+    const valid = gas.__isValidSozoshaLine;
+    expect(valid('- 届出を調べる（根拠: M-1） #未決 #ToDo #近藤', members)).toBe(true);
+    expect(valid('- 2027-01-09 さのやカフェ #未決 #予定', members)).toBe(true);
+    expect(valid('- 届出を調べる #ToDo #近藤', members)).toBe(false);
+    expect(valid('- 日付のない予定 #未決 #予定', members)).toBe(false);
+    expect(valid('- 決まった #未決 #決定', members)).toBe(false);
+    expect(valid('- 担当違い #未決 #ToDo #山田', members)).toBe(false);
+    expect(valid('届出を調べる #未決', members)).toBe(false);
+    expect(gas.__nextSozoshaIssueStatus('')).toBe('RETRY:1');
+    expect(gas.__nextSozoshaIssueStatus('RETRY:2')).toBe('FAILED');
+  });
+
+  it('creates one weekly sozosha issue only after the weekly report is sent', () => {
+    const h = sozoshaHarness();
+    h.run({ token: '' });
+    expect(h.fetches).toHaveLength(0);
+    h.run();
+    expect(h.fetches).toHaveLength(1);
+    expect(h.fetches[0].url).toBe('https://api.github.com/repos/developerKondo/sozosha/issues');
+    const issue = JSON.parse(h.fetches[0].options.payload);
+    expect(issue.title).toContain('[書記Bot] 週次');
+    expect(issue.body).toContain('- 届出を調べる #未決 #ToDo #近藤');
+    expect(issue.body).not.toContain('#決定');
+    expect(h.row.slice(13, 16)).toEqual(['https://github.com/x/1', 'CREATED', '']);
+    h.run();
+    expect(h.fetches).toHaveLength(1);
+  });
+
+  it('retries client errors but never recreates an issue with an unknown outcome', () => {
+    const rejected = sozoshaHarness({ status: 422 });
+    expect(() => rejected.run()).toThrow('GITHUB_HTTP_422');
+    expect(rejected.row[14]).toBe('RETRY:1');
+    const unknown = sozoshaHarness({ status: 502 });
+    expect(() => unknown.run()).toThrow('GITHUB_OUTCOME_UNKNOWN');
+    expect(unknown.row[14]).toBe('CREATING');
+    const thrown = sozoshaHarness({ throwOnFetch: true });
+    expect(() => thrown.run()).toThrow('GITHUB_OUTCOME_UNKNOWN');
+    expect(thrown.row[14]).toBe('CREATING');
+    thrown.run();
+    expect(thrown.fetches).toHaveLength(1);
+  });
 });
+
+function sozoshaHarness(options: { status?: number; throwOnFetch?: boolean } = {}) {
+  const source = readFileSync(new URL('../gas/Code.gs', import.meta.url), 'utf8');
+  const row: unknown[] = [
+    'weekly:2026-11-15',
+    'SENT',
+    'https://drive.example/weekly',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '# 週次まとめ',
+    '',
+    0,
+    '',
+    '',
+    '',
+    '',
+    '',
+  ];
+  const fetches: { url: string; options: any }[] = [];
+  const context: Record<string, any> = {
+    Utilities: { formatDate: (date: Date) => date.toISOString().slice(0, 10) },
+    console: { log: () => undefined },
+    UrlFetchApp: {
+      fetch: (url: string, fetchOptions: unknown) => {
+        fetches.push({ url, options: fetchOptions });
+        if (options.throwOnFetch) throw new Error('timeout');
+        return {
+          getResponseCode: () => options.status || 201,
+          getContentText: () => JSON.stringify({ html_url: 'https://github.com/x/1' }),
+        };
+      },
+    },
+  };
+  runInNewContext(
+    source +
+      `
+withLock_ = (fn) => fn();
+ensureSchema_ = () => undefined;
+sheet_ = () => ({
+  getRange: (r, c, rows, cols) => ({
+    setValues: (values) => values[0].forEach((v, i) => { globalThis.__row[c - 1 + i] = v; }),
+    setValue: (v) => { globalThis.__row[c - 1] = v; },
+  }),
+});
+dataRows_ = () => [{ number: 2, values: globalThis.__row.slice() }];
+callAiJson_ = () => ({ lines: ['- 届出を調べる #未決 #ToDo #近藤', '- 決まった #決定'] });
+globalThis.__sync = syncWeeklySozoshaIssues_;
+globalThis.__isValidSozoshaLine = isValidSozoshaLine_;
+globalThis.__nextSozoshaIssueStatus = nextSozoshaIssueStatus_;
+`,
+    Object.assign(context, { __row: row }),
+  );
+  const run = (overrides: { token?: string } = {}) =>
+    context.__sync({
+      sozoshaGithubToken: overrides.token ?? 'token',
+      sozoshaGithubRepo: 'developerKondo/sozosha',
+      sozoshaMemberTags: ['近藤', '内藤', '佐藤'],
+    });
+  return { context, run, fetches, row };
+}
