@@ -481,13 +481,14 @@ describe('GAS sheet value safety', () => {
       ...valid,
       markdown: valid.markdown.replace(from, to),
     });
-    for (const [from, to] of [
+    const replacements: [string, string][] = [
       ['# イベント', 'イベント'],
       ['## 6. 認識のズレ', '引用: ## 6. 認識のズレ'],
       ['| 優先 | タスク | 状況 |', '| タスク |'],
       ['会話上の合意（未承認）', '会話上の合意'],
       ['## 7. 結論', '## 7. まとめ'],
-    ]) {
+    ];
+    for (const [from, to] of replacements) {
       expect(() => functions.__validateExecutiveResult(broken(from, to))).toThrow(
         'INVALID_AI_STRUCTURE',
       );
@@ -764,8 +765,12 @@ describe('GAS sheet value safety', () => {
     expect(h.fetches).toHaveLength(0);
     h.run();
     expect(h.fetches).toHaveLength(1);
-    expect(h.fetches[0].url).toBe('https://api.github.com/repos/developerKondo/sozosha/issues');
-    const issue = JSON.parse(h.fetches[0].options.payload);
+    const fetch = h.fetches[0];
+    if (!fetch) {
+      throw new Error('Expected a GitHub issue creation request');
+    }
+    expect(fetch.url).toBe('https://api.github.com/repos/developerKondo/sozosha/issues');
+    const issue = JSON.parse(fetch.options.payload);
     expect(issue.title).toContain('[書記Bot] 週次');
     expect(issue.body).toContain('- 届出を調べる ＠someone #未決 #ToDo #近藤');
     expect(issue.body).not.toContain('@');
