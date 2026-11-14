@@ -1333,7 +1333,7 @@ function syncWeeklySozoshaIssues_(config) {
       });
       return;
     }
-    const issue = sozoshaIssue_(window, String(target.values[2] || ''), lines);
+    const issue = sozoshaIssue_(window, String(target.values[2] || ''), lines, new Date());
     response = postSozoshaIssue_(issue, config);
   } catch (error) {
     if (safeError_(error) === 'GITHUB_OUTCOME_UNKNOWN') {
@@ -1409,7 +1409,8 @@ function postSozoshaIssue_(issue, config) {
   return { url: url };
 }
 
-function sozoshaIssue_(window, documentUrl, lines) {
+// タイトルはsozoshaの取り込み手順が読む「YYYY-MM-DD HH:MM 投稿者名 情報書き込み」の形にする（作成時刻、JST）。
+function sozoshaIssue_(window, documentUrl, lines, createdAt) {
   const body = [
     '書記Botの週次レポート（' + window.key + '）から作成した取り込み候補です。',
     '',
@@ -1426,7 +1427,8 @@ function sozoshaIssue_(window, documentUrl, lines) {
     .join('\n');
   return {
     title:
-      '[書記Bot] 週次 ' + Utilities.formatDate(window.end, TZ, 'yyyy-MM-dd') + ' の取り込み候補',
+      Utilities.formatDate(createdAt || new Date(), TZ, 'yyyy-MM-dd HH:mm') +
+      ' 書記Bot 情報書き込み',
     body: body,
   };
 }

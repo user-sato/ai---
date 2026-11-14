@@ -771,7 +771,7 @@ describe('GAS sheet value safety', () => {
     }
     expect(fetch.url).toBe('https://api.github.com/repos/developerKondo/sozosha/issues');
     const issue = JSON.parse(fetch.options.payload);
-    expect(issue.title).toContain('[書記Bot] 週次');
+    expect(issue.title).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} 書記Bot 情報書き込み$/);
     expect(issue.body).toContain('- 届出を調べる ＠someone #未決 #ToDo #近藤');
     expect(issue.body).not.toContain('@');
     expect(issue.body).not.toContain('#決定');
@@ -850,7 +850,12 @@ function sozoshaHarness(
   ];
   const fetches: { url: string; options: any }[] = [];
   const context: Record<string, any> = {
-    Utilities: { formatDate: (date: Date) => date.toISOString().slice(0, 10) },
+    Utilities: {
+      formatDate: (date: Date, _tz: string, pattern: string) =>
+        pattern === 'yyyy-MM-dd HH:mm'
+          ? date.toISOString().slice(0, 16).replace('T', ' ')
+          : date.toISOString().slice(0, 10),
+    },
     console: { log: () => undefined },
     PropertiesService: {
       getScriptProperties: () => ({

@@ -156,6 +156,7 @@ LINE Messaging APIにはグループのノートへ投稿するAPIがないた�
 `SOZOSHA_GITHUB_REPO`と`SOZOSHA_GITHUB_TOKEN`を設定すると、日曜の週次レポートをLINEへ送った後の5分処理で、週次の「方針まとめ」をsozoshaの書き方（行ごとの`#未決`・`#ToDo`・`#予定`、担当タグ）に直した取り込み候補Issueを1件作る。メンションによる`整理して`・期間整理・統括相談ではIssueを作らない。
 
 - 会話で合意できたことはタグなしの文（sozoshaでは決定）、決まっていない論点は`#未決`、やることは`#ToDo`、予定は日付付きの`#予定`。担当タグは会話の流れから読み取れる場合に付ける。書き方に合わない行は捨てる。Issueの冒頭に「AIが振り分けた候補で、取り込むときに確認する」旨を書く。
+- Issueのタイトルは、sozoshaの取り込み手順が読む形の`YYYY-MM-DD HH:MM 書記Bot 情報書き込み`（作成時刻、JST）にする。
 - LINEの原文は入れず、整理した行と根拠の発言IDだけを入れる。
 - 設定を初めて検出した時刻を`SOZOSHA_ENABLED_AT`（Script Property、自動で記録）に残し、それより前に締め切った週次はIssueにしない（過去分をまとめて送らない）。取り込む候補が0件の週はIssueを作らず`SKIPPED`にする。行の`@`は通知を避けるため全角`＠`に置き換える。
 - 状態は`Reports`の「Sozosha Issue Status」に記録する（空=未作成、`CREATING`、`CREATED`、`RETRY:n`、`FAILED`、`SKIPPED`）。AI・検証・GitHubの4xxは最大3回再試行する。
